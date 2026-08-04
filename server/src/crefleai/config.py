@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     port: int = 8000
     worker_port: int = 8001
     worker_ctx: int = 8192
+    web_dist: Path | None = None  # None이면 저장소 기본 위치(web/dist) 자동 탐색
 
     @property
     def db_path(self) -> Path:

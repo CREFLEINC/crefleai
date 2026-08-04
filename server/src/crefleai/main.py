@@ -1,10 +1,13 @@
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from crefleai.api import admin as admin_api
 from crefleai.api import v1 as v1_api
@@ -15,6 +18,25 @@ from crefleai.db import Database
 from crefleai.models.catalog import load_catalog, model_file
 from crefleai.models.downloads import DownloadManager
 from crefleai.models.worker_manager import WorkerManager
+
+
+class SPAStaticFiles(StaticFiles):
+    """SPA 클라이언트 라우트 딥링크를 index.html로 폴백한다."""
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as e:
+            if e.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
+
+
+def _web_dist(settings: Settings) -> Path | None:
+    if settings.web_dist is not None:
+        return settings.web_dist
+    default = Path(__file__).resolve().parents[3] / "web" / "dist"
+    return default if default.exists() else None
 
 
 def _maybe_restore(app: FastAPI) -> asyncio.Task | None:
@@ -93,6 +115,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(admin_api.router)
     app.include_router(v1_api.router)
+
+    dist = _web_dist(app.state.settings)
+    if dist is not None and dist.exists():
+        app.mount("/", SPAStaticFiles(directory=dist, html=True), name="web")
+
     return app
 
 
