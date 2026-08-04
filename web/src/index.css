@@ -1,0 +1,69 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color-scheme: light dark;
+}
+body {
+  margin: 0;
+}
+.admin-layout header {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #8884;
+}
+.admin-layout section,
+.chat,
+.login {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+th,
+td {
+  border-bottom: 1px solid #8884;
+  padding: 0.5rem;
+  text-align: left;
+}
+label {
+  display: block;
+  margin: 0.5rem 0;
+}
+input,
+textarea {
+  display: block;
+  width: 100%;
+  max-width: 24rem;
+  padding: 0.4rem;
+}
+.token-modal {
+  border: 1px solid #8886;
+  padding: 1rem;
+  margin: 1rem 0;
+  word-break: break-all;
+}
+.messages {
+  list-style: none;
+  padding: 0;
+}
+.messages li {
+  margin: 0.75rem 0;
+}
+.messages li p {
+  padding: 0.5rem;
+  border-radius: 6px;
+  white-space: pre-wrap;
+}
+.messages li.user p {
+  background: #4a90d922;
+}
+.messages li.assistant p {
+  background: #8883;
+}
+[role="alert"] {
+  color: #c0392b;
+}

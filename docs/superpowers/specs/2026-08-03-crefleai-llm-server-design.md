@@ -32,7 +32,7 @@ Ollama 같은 기존 오픈 소스를 그대로 쓰지 않고 서버 계층을 �
 ┌───────────────────────────────┐
 │  FastAPI 게이트웨이 (:8000)      │  ← 유일한 외부 노출 프로세스
 │  · OpenAI 호환 API (/v1/*)     │
-│  · 관리자 API (/admin/*)        │
+│  · 관리자 API (/api/admin/*)    │
 │  · React SPA 정적 서빙          │
 │  · 워커 생명주기 관리             │
 └──────────────┬────────────────┘
@@ -103,10 +103,10 @@ crefleai/
 - 최초 기동 시 계정이 없으면 `CREFLEAI_ADMIN_ID` / `CREFLEAI_ADMIN_PASSWORD`로 생성
 - 로그인 성공 시 만료 12시간의 관리자 세션 JWT를 HTTP-only 쿠키로 발급
 - 관리자 세션 JWT는 동일한 `CREFLEAI_JWT_SECRET`으로 서명하되 `scope: "admin"`
-  클레임으로 사용자 토큰과 구분한다. `/admin/*` 검증은 `scope: "admin"`을 요구하고,
+  클레임으로 사용자 토큰과 구분한다. `/api/admin/*` 검증은 `scope: "admin"`을 요구하고,
   `/v1/*` 검증은 allowlist(`jti`가 `tokens` 테이블에 존재)를 요구하므로 두 토큰은
   상호 교차 사용이 불가능하다.
-- `/admin/*` API는 이 쿠키로 보호. 사용자 토큰과 완전히 분리된 경로.
+- `/api/admin/*` API는 이 쿠키로 보호. 사용자 토큰과 완전히 분리된 경로.
 - 비밀번호 변경 등 부가 기능은 다음 개발 범위.
 
 ### 5.3 DB 스키마 (SQLite)
@@ -135,17 +135,19 @@ settings(key PK, value)   -- 예: serving_model = "qwen3-8b-q4"
   - 서비스 중인 모델 없음: 503
   - 존재하지 않는 `model` 지정: 404
 
-### 6.2 관리자 API (`/admin/*`, 쿠키 세션 보호)
+### 6.2 관리자 API (`/api/admin/*`, 쿠키 세션 보호)
 
 | 엔드포인트 | 설명 |
 |---|---|
-| `POST /admin/login`, `POST /admin/logout` | 로그인/로그아웃 |
-| `GET /admin/models` | 카탈로그 + 상태(미다운로드/다운로드 중(진행률)/준비됨/서비스 중) |
-| `POST /admin/models/{id}/download` | 백그라운드 다운로드 시작 |
-| `POST /admin/models/{id}/serve` | 서비스 모델 선택 → 워커 교체 |
-| `GET /admin/tokens` | 토큰 목록 (이름·목적·생성일·상태) |
-| `POST /admin/tokens` | 토큰 생성. JWT 원문은 이 응답에서 1회만 반환 |
-| `DELETE /admin/tokens/{jti}` | 토큰 폐기 (즉시 무효화) |
+| `POST /api/admin/login`, `POST /api/admin/logout` | 로그인/로그아웃 |
+| `GET /api/admin/models` | 카탈로그 + 상태(미다운로드/다운로드 중(진행률)/준비됨/서비스 중) |
+| `POST /api/admin/models/{id}/download` | 백그라운드 다운로드 시작 |
+| `POST /api/admin/models/{id}/serve` | 서비스 모델 선택 → 워커 교체 |
+| `GET /api/admin/tokens` | 토큰 목록 (이름·목적·생성일·상태) |
+| `POST /api/admin/tokens` | 토큰 생성. JWT 원문은 이 응답에서 1회만 반환 |
+| `DELETE /api/admin/tokens/{jti}` | 토큰 폐기 (즉시 무효화) |
+
+> **참고**: 관리자 API 경로는 SPA 라우트 충돌로 구현 중 `/api/admin/*`로 변경됨 (화면 라우트 `/admin/*`은 유지). 사용자 승인: 2026-08-04.
 
 ### 6.3 워커 내부 API (localhost 전용)
 
@@ -164,8 +166,8 @@ settings(key PK, value)   -- 예: serving_model = "qwen3-8b-q4"
   `filename`(GGUF), `quantization`, `size_bytes`, `context_length`, `license`,
   `description`. 초기 목록은 한국어 성능과 GPU 메모리를 고려해 구현 시점에 확정
   (Qwen3, EXAONE, Gemma 3, Llama 3.x 계열 Q4_K_M 후보).
-- **다운로드**: `huggingface_hub`로 백그라운드 다운로드. 진행률은 관리자 화면이
-  `GET /admin/models` 폴링으로 표시. 실패 시 부분 파일 정리 후 `failed` 상태,
+- **다운로드**: Hugging Face에서 httpx 스트리밍으로 직접 백그라운드 다운로드. 진행률은 관리자 화면이
+  `GET /api/admin/models` 폴링으로 표시. 실패 시 부분 파일 정리 후 `failed` 상태,
   재시도 가능.
 - **서비스 교체**: `serve` 요청 → 기존 워커 graceful 종료 → 새 워커 스폰
   → `/health` 폴링으로 로드 확인 → `settings.serving_model` 갱신.
