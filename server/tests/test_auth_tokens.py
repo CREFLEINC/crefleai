@@ -36,3 +36,9 @@ def test_jti_없는_토큰_거부(db):
     token = pyjwt.encode({"sub": "admin", "scope": "admin"}, SECRET, algorithm="HS256")
     with pytest.raises(InvalidTokenError):
         verify_user_token(db, SECRET, token)
+
+
+def test_빈_시크릿도_InvalidTokenError(db):
+    token, _ = create_user_token(db, SECRET, "홍길동", "테스트")
+    with pytest.raises(InvalidTokenError):
+        verify_user_token(db, "", token)

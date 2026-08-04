@@ -27,7 +27,7 @@ def verify_user_token(db: Database, secret: str, token: str) -> dict:
         payload = jwt.decode(
             token, secret, algorithms=[ALGORITHM], options={"require": ["jti", "sub"]}
         )
-    except jwt.InvalidTokenError as e:
+    except jwt.PyJWTError as e:
         raise InvalidTokenError(str(e)) from e
     row = db.get_token(payload["jti"])
     if row is None or row["revoked_at"] is not None:
