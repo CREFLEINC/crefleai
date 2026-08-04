@@ -166,7 +166,7 @@ settings(key PK, value)   -- 예: serving_model = "qwen3-8b-q4"
   `filename`(GGUF), `quantization`, `size_bytes`, `context_length`, `license`,
   `description`. 초기 목록은 한국어 성능과 GPU 메모리를 고려해 구현 시점에 확정
   (Qwen3, EXAONE, Gemma 3, Llama 3.x 계열 Q4_K_M 후보).
-- **다운로드**: `huggingface_hub`로 백그라운드 다운로드. 진행률은 관리자 화면이
+- **다운로드**: Hugging Face에서 httpx 스트리밍으로 직접 백그라운드 다운로드. 진행률은 관리자 화면이
   `GET /api/admin/models` 폴링으로 표시. 실패 시 부분 파일 정리 후 `failed` 상태,
   재시도 가능.
 - **서비스 교체**: `serve` 요청 → 기존 워커 graceful 종료 → 새 워커 스폰
