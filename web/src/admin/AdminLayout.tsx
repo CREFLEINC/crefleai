@@ -5,8 +5,13 @@ export default function AdminLayout() {
   const navigate = useNavigate();
 
   async function logout() {
-    await api("/admin/logout", { method: "POST" });
-    navigate("/login");
+    try {
+      await api("/admin/logout", { method: "POST" });
+    } catch (err) {
+      // Silently ignore logout errors - user navigates to login regardless
+    } finally {
+      navigate("/login");
+    }
   }
 
   return (
