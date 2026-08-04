@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from crefleai.api import admin as admin_api
@@ -28,6 +29,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": {"message": exc.message, "type": exc.type, "code": exc.code}},
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(request: Request, exc: RequestValidationError):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "message": "요청 본문이 유효하지 않습니다",
+                    "type": "invalid_request_error",
+                    "code": None,
+                }
+            },
+        )
+
+    @app.exception_handler(Exception)
+    async def _unhandled_error(request: Request, exc: Exception):
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": {
+                    "message": "내부 서버 오류가 발생했습니다",
+                    "type": "server_error",
+                    "code": None,
+                }
+            },
         )
 
     app.include_router(admin_api.router)
