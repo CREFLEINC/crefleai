@@ -77,3 +77,15 @@ async def test_재시작_한도_초과시_failed():
     assert wm.status == "failed"
     assert wm.error is not None
     await wm.stop()
+
+
+async def test_동시_serve_호출은_직렬화된다():
+    wm = WorkerManager(PORT, 2048, command_builder=fake_command, startup_timeout=15)
+    results = await asyncio.gather(
+        wm.serve(MODEL, Path("/fake/tiny.gguf")),
+        wm.serve(MODEL, Path("/fake/tiny.gguf")),
+        return_exceptions=True,
+    )
+    assert [r for r in results if isinstance(r, BaseException)] == []
+    assert wm.status == "running"
+    await wm.stop()

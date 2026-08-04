@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 from fastapi.testclient import TestClient
@@ -72,3 +73,24 @@ def test_복원_실패해도_기동은_정상(settings, monkeypatch):
         assert client.app.state.worker_manager.status == "failed"
         assert client.app.state.restore_task is not None
     # with 블록 정상 종료(shutdown 포함)가 곧 검증 — unhandled exception이 없어야 한다
+
+
+def test_복원_중_종료시_태스크가_취소된다(settings, monkeypatch):
+    from crefleai.models.worker_manager import WorkerManager
+
+    async def slow_serve(self, model, model_path):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(WorkerManager, "serve", slow_serve)
+
+    model_id = next(iter(load_catalog()))
+    model = load_catalog()[model_id]
+    path = model_file(settings.models_dir, model)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"fake gguf")
+    _preset_serving_model(settings, model_id)
+
+    with TestClient(create_app(settings)) as client:
+        task = client.app.state.restore_task
+        assert task is not None
+    assert task.cancelled()  # with 블록이 30초 걸리지 않고 즉시 끝났다는 것 자체가 취소의 증거

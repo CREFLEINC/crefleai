@@ -71,6 +71,14 @@ async def _lifespan(app: FastAPI):
     app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(10, read=None))
     app.state.restore_task = _maybe_restore(app)
     yield
+    for task_name in ("serve_task", "restore_task"):
+        task = getattr(app.state, task_name, None)
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
     await app.state.worker_manager.stop()
     await app.state.http_client.aclose()
     app.state.db.close()

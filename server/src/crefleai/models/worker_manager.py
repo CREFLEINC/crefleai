@@ -34,6 +34,7 @@ class WorkerManager:
         self._restarts = 0
         self.status = "stopped"
         self.error: str | None = None
+        self._serve_lock = asyncio.Lock()
 
     @property
     def base_url(self) -> str:
@@ -53,10 +54,11 @@ class WorkerManager:
         ]
 
     async def serve(self, model: CatalogModel, model_path: Path) -> None:
-        await self.stop()
-        self._model, self._model_path = model, model_path
-        self._restarts = 0
-        await self._spawn()
+        async with self._serve_lock:
+            await self._stop_locked()
+            self._model, self._model_path = model, model_path
+            self._restarts = 0
+            await self._spawn()
 
     async def _spawn(self) -> None:
         self.status, self.error = "starting", None
@@ -91,17 +93,18 @@ class WorkerManager:
     async def _watch(self) -> None:
         proc = self._proc
         await proc.wait()
-        if self.status == "stopping" or proc is not self._proc:
-            return
-        self._restarts += 1
-        if self._restarts > self._max_restarts:
-            self.status = "failed"
-            self.error = "워커가 반복적으로 종료되어 재시작을 중단했습니다"
-            return
-        try:
-            await self._spawn()
-        except WorkerError:
-            pass  # 상태는 _spawn이 failed로 기록
+        async with self._serve_lock:
+            if self.status == "stopping" or proc is not self._proc:
+                return
+            self._restarts += 1
+            if self._restarts > self._max_restarts:
+                self.status = "failed"
+                self.error = "워커가 반복적으로 종료되어 재시작을 중단했습니다"
+                return
+            try:
+                await self._spawn()
+            except WorkerError:
+                pass  # 상태는 _spawn이 failed로 기록
 
     async def _terminate(self) -> None:
         if self._proc and self._proc.returncode is None:
@@ -113,6 +116,10 @@ class WorkerManager:
                 await self._proc.wait()
 
     async def stop(self) -> None:
+        async with self._serve_lock:
+            await self._stop_locked()
+
+    async def _stop_locked(self) -> None:
         self.status = "stopping"
         if self._watchdog:
             self._watchdog.cancel()
