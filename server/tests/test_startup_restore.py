@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from crefleai.db import Database
 from crefleai.main import create_app
 from crefleai.models.catalog import load_catalog, model_file
+from crefleai.models.worker_manager import WorkerError
 
 
 def _preset_serving_model(settings, model_id: str):
@@ -44,3 +45,30 @@ def test_조건_충족시_복원_시도(settings, monkeypatch):
             if served:
                 break
         assert served == [model_id]
+
+
+def test_복원_실패해도_기동은_정상(settings, monkeypatch):
+    async def failing_serve(self, model, model_path):
+        self.status = "failed"
+        self.error = "boom"
+        raise WorkerError("boom")
+
+    from crefleai.models.worker_manager import WorkerManager
+
+    monkeypatch.setattr(WorkerManager, "serve", failing_serve)
+
+    model_id = next(iter(load_catalog()))
+    model = load_catalog()[model_id]
+    path = model_file(settings.models_dir, model)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"fake gguf")
+    _preset_serving_model(settings, model_id)
+
+    with TestClient(create_app(settings)) as client:
+        for _ in range(50):
+            time.sleep(0.1)
+            if client.app.state.worker_manager.status == "failed":
+                break
+        assert client.app.state.worker_manager.status == "failed"
+        assert client.app.state.restore_task is not None
+    # with 블록 정상 종료(shutdown 포함)가 곧 검증 — unhandled exception이 없어야 한다

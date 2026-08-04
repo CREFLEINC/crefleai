@@ -28,7 +28,14 @@ def _maybe_restore(app: FastAPI) -> asyncio.Task | None:
     path = model_file(settings.models_dir, model)
     if not path.exists():
         return None
-    return asyncio.create_task(app.state.worker_manager.serve(model, path))
+
+    async def _restore():
+        try:
+            await app.state.worker_manager.serve(model, path)
+        except Exception:  # noqa: BLE001, S110 — 실패 상태는 wm.status/error로 노출된다
+            pass
+
+    return asyncio.create_task(_restore())
 
 
 @asynccontextmanager
