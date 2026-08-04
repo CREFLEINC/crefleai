@@ -1,0 +1,22 @@
+name: crefleai
+
+services:
+  crefleai:
+    image: hub.crefle.com/crefle-ai/crefleai:${CREFLEAI_IMAGE_TAG:?CREFLEAI_IMAGE_TAG를 .env에 설정하세요}
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      CREFLEAI_JWT_SECRET: ${CREFLEAI_JWT_SECRET:?}
+      CREFLEAI_ADMIN_ID: ${CREFLEAI_ADMIN_ID:?}
+      CREFLEAI_ADMIN_PASSWORD: ${CREFLEAI_ADMIN_PASSWORD:?}
+      CREFLEAI_DATA_DIR: /app/data
+    volumes:
+      - /home/crefleai/data:/app/data
+    gpus: all
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
