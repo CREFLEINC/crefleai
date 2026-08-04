@@ -52,15 +52,17 @@ class DownloadManager:
             await task
 
     async def _download(self, model_id: str) -> None:
-        model = self._catalog[model_id]
-        url = f"{HF_BASE}/{model.hf_repo}/resolve/main/{model.filename}"
-        part = self._models_dir / f"{model.filename}.part"
-        state = self._states[model_id]
-        client = self._client or httpx.AsyncClient(
-            follow_redirects=True, timeout=httpx.Timeout(30, read=120)
-        )
-        owns_client = self._client is None
+        client: httpx.AsyncClient | None = None
+        owns_client = False
         try:
+            model = self._catalog[model_id]
+            url = f"{HF_BASE}/{model.hf_repo}/resolve/main/{model.filename}"
+            part = self._models_dir / f"{model.filename}.part"
+            state = self._states[model_id]
+            client = self._client or httpx.AsyncClient(
+                follow_redirects=True, timeout=httpx.Timeout(30, read=120)
+            )
+            owns_client = self._client is None
             self._models_dir.mkdir(parents=True, exist_ok=True)
             async with client.stream("GET", url) as response:
                 response.raise_for_status()
@@ -75,8 +77,10 @@ class DownloadManager:
             part.replace(self._models_dir / model.filename)
             state.status, state.progress = "ready", 1.0
         except Exception as e:  # noqa: BLE001 — 상태로 노출하고 삼키지 않는다
+            state = self._states[model_id]
+            part = self._models_dir / f"{self._catalog[model_id].filename}.part"
             part.unlink(missing_ok=True)
             state.status, state.error = "failed", str(e)
         finally:
-            if owns_client:
+            if owns_client and client is not None:
                 await client.aclose()

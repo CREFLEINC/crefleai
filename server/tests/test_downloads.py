@@ -61,3 +61,18 @@ async def test_실패시_part_정리_후_재시도_가능(tmp_path):
     assert state.error is not None
     assert not (tmp_path / "models" / "tiny.gguf.part").exists()
     assert dm.start("tiny") is True  # 재시도 허용
+
+
+async def test_클라이언트_생성_실패도_failed_상태(tmp_path, monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("client construction failed")
+
+    monkeypatch.setattr("crefleai.models.downloads.httpx.AsyncClient", boom)
+    dm = DownloadManager(tmp_path / "models", CATALOG, client=None)
+    assert dm.start("tiny") is True
+    await dm.wait("tiny")
+
+    state = dm.state_for("tiny")
+    assert state.status == "failed"
+    assert state.error is not None
+    assert dm.start("tiny") is True  # 재시도 가능해야 함
