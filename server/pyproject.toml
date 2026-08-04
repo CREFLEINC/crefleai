@@ -1,6 +1,6 @@
 [project]
 name = "crefleai"
-version = "0.1.0"
+version = "0.1.1"
 description = "CREFLE 사내 로컬 LLM 서비스 서버"
 requires-python = ">=3.11"
 dependencies = [
