@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 
 from fastapi.testclient import TestClient
 
@@ -82,3 +84,75 @@ def test_스트리밍_completion():
     contents = [c["choices"][0]["delta"].get("content", "") for c in chunks]
     assert "".join(contents) == "안녕"
     assert all(c["model"] == "test-model" for c in chunks)
+
+
+class ConcurrencyTrackingFake:
+    """동시 호출 수를 추적하는 fake — 락 독점 보장 검증용."""
+
+    def __init__(self):
+        self.active = 0
+        self.max_active = 0
+        self.stream_closed = False
+        self._mu = threading.Lock()
+
+    def _enter(self):
+        with self._mu:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+
+    def _exit(self):
+        with self._mu:
+            self.active -= 1
+
+    def create_chat_completion(self, stream=False, **kwargs):
+        if stream:
+            def gen():
+                self._enter()
+                try:
+                    for _ in range(1000):
+                        time.sleep(0.005)
+                        yield {"choices": [{"delta": {"content": "x"}}]}
+                finally:
+                    self._exit()
+                    self.stream_closed = True
+            return gen()
+        self._enter()
+        try:
+            time.sleep(0.05)
+            return {
+                "id": "chatcmpl-y",
+                "object": "chat.completion",
+                "model": "local",
+                "choices": [
+                    {"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+        finally:
+            self._exit()
+
+
+def test_스트리밍_중단시_프로듀서_정리와_락_독점():
+    fake = ConcurrencyTrackingFake()
+    app = create_app("/fake/path.gguf", "test-model", 2048, llama_factory=lambda p, c: fake)
+    with TestClient(app) as client:
+        with client.stream(
+            "POST",
+            "/completion",
+            json={"messages": [{"role": "user", "content": "hi"}], "stream": True},
+        ) as res:
+            lines = res.iter_lines()
+            next(lines)  # 첫 청크만 읽고 연결을 끊는다
+        # 끊긴 뒤 후속 요청이 정상 동작해야 하고
+        res2 = client.post(
+            "/completion", json={"messages": [{"role": "user", "content": "hi"}]}
+        )
+        assert res2.status_code == 200
+    # 프로듀서가 정리되었어야 하며
+    for _ in range(50):
+        if fake.stream_closed:
+            break
+        time.sleep(0.1)
+    assert fake.stream_closed
+    # 어떤 순간에도 llama 동시 호출은 1을 넘지 않아야 한다
+    assert fake.max_active == 1

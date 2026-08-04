@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import json
 import threading
 from contextlib import asynccontextmanager
@@ -53,27 +54,51 @@ def create_app(model_path: str, model_id: str, n_ctx: int, llama_factory=None) -
         async with lock:
             queue: asyncio.Queue = asyncio.Queue(maxsize=32)
             loop = asyncio.get_running_loop()
+            stop = threading.Event()
+
+            def _put(item) -> bool:
+                """큐에 넣되, 소비자가 사라지면(stop) 포기한다."""
+                future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+                while True:
+                    try:
+                        future.result(timeout=1.0)
+                        return True
+                    except concurrent.futures.TimeoutError:
+                        if stop.is_set():
+                            future.cancel()
+                            return False
 
             def produce():
                 try:
                     for chunk in state["llama"].create_chat_completion(stream=True, **kwargs):
-                        asyncio.run_coroutine_threadsafe(queue.put(("chunk", chunk)), loop).result()
-                    asyncio.run_coroutine_threadsafe(queue.put(("done", None)), loop).result()
+                        if stop.is_set() or not _put(("chunk", chunk)):
+                            return
+                    _put(("done", None))
                 except Exception as e:  # noqa: BLE001 — 클라이언트에 에러 이벤트로 전달
-                    asyncio.run_coroutine_threadsafe(queue.put(("error", str(e))), loop).result()
+                    _put(("error", str(e)))
 
-            threading.Thread(target=produce, daemon=True).start()
-            while True:
-                kind, item = await queue.get()
-                if kind == "chunk":
-                    item["model"] = model_id
-                    yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
-                elif kind == "error":
-                    payload = {"error": {"message": item, "type": "server_error", "code": None}}
-                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-                    break
-                else:
-                    yield "data: [DONE]\n\n"
-                    break
+            producer = threading.Thread(target=produce, daemon=True)
+            producer.start()
+            try:
+                while True:
+                    kind, item = await queue.get()
+                    if kind == "chunk":
+                        item["model"] = model_id
+                        yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+                    elif kind == "error":
+                        payload = {"error": {"message": item, "type": "server_error", "code": None}}
+                        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                        break
+                    else:
+                        yield "data: [DONE]\n\n"
+                        break
+            finally:
+                # 소비자가 끊겨도(취소 포함) 프로듀서를 반드시 세우고 락 독점을 지킨다.
+                # sync join은 이벤트 루프를 최대 2초 블로킹하지만, 취소된 스코프에서
+                # await는 즉시 재취소되므로 동기 join이 유일하게 확실한 방법이다.
+                stop.set()
+                while not queue.empty():
+                    queue.get_nowait()
+                producer.join(timeout=2.0)
 
     return app
