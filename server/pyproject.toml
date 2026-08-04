@@ -36,3 +36,6 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+ignore = ["B008"]  # FastAPI Depends() pattern in default arguments is idiomatic

@@ -70,14 +70,13 @@ def test_비스트리밍_completion():
 
 def test_스트리밍_completion():
     client, _ = make_client()
-    with client:
-        with client.stream(
-            "POST",
-            "/completion",
-            json={"messages": [{"role": "user", "content": "hi"}], "stream": True},
-        ) as res:
-            assert res.headers["content-type"].startswith("text/event-stream")
-            lines = [l for l in res.iter_lines() if l.startswith("data: ")]
+    with client, client.stream(
+        "POST",
+        "/completion",
+        json={"messages": [{"role": "user", "content": "hi"}], "stream": True},
+    ) as res:
+        assert res.headers["content-type"].startswith("text/event-stream")
+        lines = [l for l in res.iter_lines() if l.startswith("data: ")]
 
     assert lines[-1] == "data: [DONE]"
     chunks = [json.loads(l[6:]) for l in lines[:-1]]

@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 import httpx
@@ -11,9 +12,23 @@ from crefleai.api.errors import APIError
 from crefleai.auth.admin import bootstrap_admin
 from crefleai.config import Settings, get_settings
 from crefleai.db import Database
-from crefleai.models.catalog import load_catalog
+from crefleai.models.catalog import load_catalog, model_file
 from crefleai.models.downloads import DownloadManager
 from crefleai.models.worker_manager import WorkerManager
+
+
+def _maybe_restore(app: FastAPI) -> asyncio.Task | None:
+    db = app.state.db
+    catalog = app.state.catalog
+    settings = app.state.settings
+    model_id = db.get_setting("serving_model")
+    model = catalog.get(model_id) if model_id else None
+    if model is None:
+        return None
+    path = model_file(settings.models_dir, model)
+    if not path.exists():
+        return None
+    return asyncio.create_task(app.state.worker_manager.serve(model, path))
 
 
 @asynccontextmanager
@@ -25,6 +40,7 @@ async def _lifespan(app: FastAPI):
     app.state.download_manager = DownloadManager(settings.models_dir, app.state.catalog)
     app.state.worker_manager = WorkerManager(settings.worker_port, settings.worker_ctx)
     app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(10, read=None))
+    app.state.restore_task = _maybe_restore(app)
     yield
     await app.state.worker_manager.stop()
     await app.state.http_client.aclose()

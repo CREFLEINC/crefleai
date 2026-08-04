@@ -11,7 +11,6 @@ from crefleai.api.deps import (
     get_catalog,
     get_db,
     get_download_manager,
-    get_worker_manager,
     require_admin,
 )
 from crefleai.api.errors import APIError
@@ -93,7 +92,7 @@ def revoke_token(
     db: Database = Depends(get_db),
     _admin: dict = Depends(require_admin),
 ):
-    revoked = db.revoke_token(jti, dt.datetime.now(dt.timezone.utc).isoformat())
+    revoked = db.revoke_token(jti, dt.datetime.now(dt.UTC).isoformat())
     if not revoked:
         raise APIError(404, "해당 토큰이 없거나 이미 폐기되었습니다", "invalid_request_error")
     return {"ok": True}
@@ -165,7 +164,7 @@ async def serve_model(
         try:
             await wm.serve(model, path)
             db.set_setting("serving_model", model_id)
-        except Exception:  # noqa: BLE001 — 실패 상태는 wm.status/error로 노출된다
+        except Exception:  # noqa: BLE001, S110 — 실패 상태는 wm.status/error로 노출된다
             pass
 
     request.app.state.serve_task = asyncio.create_task(_serve_and_persist())

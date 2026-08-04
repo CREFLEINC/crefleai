@@ -10,7 +10,7 @@ ALGORITHM = "HS256"
 
 
 def create_user_token(db: Database, secret: str, user_name: str, purpose: str) -> tuple[str, dict]:
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     payload = {
         "sub": user_name,
         "purpose": purpose,

@@ -1,5 +1,4 @@
 import httpx
-import pytest
 
 from crefleai.models.catalog import CatalogModel
 from crefleai.models.downloads import DownloadManager

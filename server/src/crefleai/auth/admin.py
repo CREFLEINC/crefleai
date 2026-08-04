@@ -24,7 +24,7 @@ def bootstrap_admin(db: Database, settings: Settings) -> None:
         return
     if not settings.admin_id or not settings.admin_password:
         return
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     db.create_admin(settings.admin_id, hash_password(settings.admin_password), now.isoformat())
 
 
@@ -32,7 +32,7 @@ def login_admin(db: Database, secret: str, username: str, password: str) -> str 
     row = db.get_admin(username)
     if row is None or not check_password(password, row["password_hash"]):
         return None
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     payload = {
         "sub": username,
         "scope": "admin",
