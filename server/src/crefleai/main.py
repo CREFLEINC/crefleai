@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from crefleai.api import admin as admin_api
+from crefleai.api import v1 as v1_api
 from crefleai.api.errors import APIError
 from crefleai.auth.admin import bootstrap_admin
 from crefleai.config import Settings, get_settings
@@ -22,8 +24,10 @@ async def _lifespan(app: FastAPI):
     app.state.catalog = load_catalog()
     app.state.download_manager = DownloadManager(settings.models_dir, app.state.catalog)
     app.state.worker_manager = WorkerManager(settings.worker_port, settings.worker_ctx)
+    app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(10, read=None))
     yield
     await app.state.worker_manager.stop()
+    await app.state.http_client.aclose()
     app.state.db.close()
 
 
@@ -65,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.include_router(admin_api.router)
+    app.include_router(v1_api.router)
     return app
 
 
