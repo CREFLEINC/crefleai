@@ -39,7 +39,7 @@ async def chat_completions(
     if body.get("stream"):
         async def relay():
             try:
-                async with client.stream("POST", url, json=body, timeout=None) as response:
+                async with client.stream("POST", url, json=body) as response:
                     async for chunk in response.aiter_raw():
                         yield chunk
             except httpx.TransportError:
@@ -49,7 +49,7 @@ async def chat_completions(
         return StreamingResponse(relay(), media_type="text/event-stream")
 
     try:
-        response = await client.post(url, json=body, timeout=None)
+        response = await client.post(url, json=body)
     except httpx.TransportError as e:
         raise APIError(502, "추론 워커에 연결할 수 없습니다", "server_error") from e
     return JSONResponse(response.json(), status_code=response.status_code)

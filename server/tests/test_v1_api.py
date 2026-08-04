@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 from fastapi import FastAPI
@@ -56,6 +58,20 @@ def v1_client(admin_client):
     return admin_client
 
 
+@pytest.fixture
+def broken_worker_client(admin_client):
+    app = admin_client.app
+
+    def raise_connect(request):
+        raise httpx.ConnectError("connection refused")
+
+    app.state.worker_manager = FakeWorkerManager()
+    app.state.http_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(raise_connect), base_url="http://worker"
+    )
+    return admin_client
+
+
 def test_토큰_없으면_401(v1_client):
     res = v1_client.post("/v1/chat/completions", json={"messages": []})
     assert res.status_code == 401
@@ -108,3 +124,26 @@ def test_다른_모델_지정시_404(v1_client, user_token):
         json={"messages": [], "model": "없는-모델"},
     )
     assert res.status_code == 404
+
+
+def test_워커_연결_실패시_502(broken_worker_client, user_token):
+    res = broken_worker_client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert res.status_code == 502
+    assert res.json()["error"]["type"] == "server_error"
+
+
+def test_스트리밍_중_연결_실패는_error_이벤트(broken_worker_client, user_token):
+    with broken_worker_client.stream(
+        "POST",
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"messages": [{"role": "user", "content": "hi"}], "stream": True},
+    ) as res:
+        assert res.status_code == 200  # 스트림은 이미 200으로 시작됨
+        lines = [l for l in res.iter_lines() if l.startswith("data: ")]
+    payload = json.loads(lines[0][6:])
+    assert payload["error"]["type"] == "server_error"
