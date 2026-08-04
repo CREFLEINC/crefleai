@@ -1,0 +1,35 @@
+[
+  {
+    "id": "qwen3-8b-q4km",
+    "display_name": "Qwen3 8B (Q4_K_M)",
+    "hf_repo": "Qwen/Qwen3-8B-GGUF",
+    "filename": "Qwen3-8B-Q4_K_M.gguf",
+    "quantization": "Q4_K_M",
+    "size_bytes": 5027783488,
+    "context_length": 32768,
+    "license": "Apache-2.0",
+    "description": "다국어·한국어 성능이 좋은 범용 모델. 기본 추천."
+  },
+  {
+    "id": "qwen2.5-7b-instruct-q3km",
+    "display_name": "Qwen2.5 7B Instruct (Q3_K_M)",
+    "hf_repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
+    "filename": "qwen2.5-7b-instruct-q3_k_m.gguf",
+    "quantization": "Q3_K_M",
+    "size_bytes": 3808391072,
+    "context_length": 32768,
+    "license": "Apache-2.0",
+    "description": "검증이 많이 된 안정적인 범용 모델."
+  },
+  {
+    "id": "exaone-3.5-7.8b-q4km",
+    "display_name": "EXAONE 3.5 7.8B Instruct (Q4_K_M)",
+    "hf_repo": "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct-GGUF",
+    "filename": "EXAONE-3.5-7.8B-Instruct-Q4_K_M.gguf",
+    "quantization": "Q4_K_M",
+    "size_bytes": 4770649728,
+    "context_length": 32768,
+    "license": "EXAONE AI Model License (연구용 — 상업 이용 제한 주의)",
+    "description": "LG AI연구원의 한국어 특화 모델. 라이선스 조건 확인 필요."
+  }
+]
