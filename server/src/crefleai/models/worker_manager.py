@@ -116,6 +116,10 @@ class WorkerManager:
         self.status = "stopping"
         if self._watchdog:
             self._watchdog.cancel()
+            try:
+                await self._watchdog
+            except asyncio.CancelledError:
+                pass
             self._watchdog = None
         await self._terminate()
         self._proc = None

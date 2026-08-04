@@ -53,3 +53,27 @@ async def test_비정상_종료시_자동_재시작():
     assert wm.status == "running"
     assert wm._proc.pid != first_pid
     await wm.stop()
+
+
+async def test_기동_중_조기_종료시_WorkerError():
+    def exiting_command(model, model_path):
+        return [sys.executable, "-c", "import sys; sys.exit(3)"]
+
+    wm = WorkerManager(PORT, 2048, command_builder=exiting_command, startup_timeout=15)
+    with pytest.raises(WorkerError):
+        await wm.serve(MODEL, Path("/fake/tiny.gguf"))
+    assert wm.status == "failed"
+    await wm.stop()
+
+
+async def test_재시작_한도_초과시_failed():
+    wm = WorkerManager(PORT, 2048, command_builder=fake_command, startup_timeout=15, max_restarts=0)
+    await wm.serve(MODEL, Path("/fake/tiny.gguf"))
+    wm._proc.terminate()  # 비정상 종료 — max_restarts=0이므로 재시작 없이 failed
+    for _ in range(100):
+        await asyncio.sleep(0.2)
+        if wm.status == "failed":
+            break
+    assert wm.status == "failed"
+    assert wm.error is not None
+    await wm.stop()
