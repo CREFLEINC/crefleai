@@ -157,6 +157,10 @@ async def serve_model(
     db = request.app.state.db
     path = model_file(request.app.state.settings.models_dir, model)
 
+    existing = getattr(request.app.state, "serve_task", None)
+    if existing is not None and not existing.done():
+        raise APIError(409, "이미 모델 교체가 진행 중입니다", "invalid_request_error")
+
     async def _serve_and_persist():
         try:
             await wm.serve(model, path)
