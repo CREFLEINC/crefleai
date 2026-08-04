@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AdminModels } from "../types";
 import ModelsPage from "./ModelsPage";
@@ -35,4 +36,15 @@ it("모델 목록과 다운로드 버튼을 보여준다", async () => {
   expect(await screen.findByText("Qwen3 8B (Q4_K_M)")).toBeInTheDocument();
   expect(screen.getByText("미다운로드")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "다운로드" })).toBeInTheDocument();
+});
+
+it("다운로드 버튼이 /api/admin 경로를 호출한다", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(new Response(JSON.stringify(BODY), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ModelsPage />);
+  await userEvent.click(await screen.findByRole("button", { name: "다운로드" }));
+  const paths = fetchMock.mock.calls.map((c) => c[0]);
+  expect(paths).toContain("/api/admin/models/qwen3-8b-q4km/download");
 });

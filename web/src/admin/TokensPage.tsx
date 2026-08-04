@@ -37,7 +37,7 @@ export default function TokensPage() {
   async function onRevoke(jti: string) {
     if (!window.confirm("이 토큰을 폐기할까요? 즉시 사용할 수 없게 됩니다.")) return;
     try {
-      await api(`/admin/tokens/${jti}`, { method: "DELETE" });
+      await api(`/api/admin/tokens/${jti}`, { method: "DELETE" });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "폐기 실패");

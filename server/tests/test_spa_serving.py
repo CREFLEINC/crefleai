@@ -11,8 +11,8 @@ def test_spa_서빙과_폴백(settings, tmp_path):
     spa_settings = settings.model_copy(update={"web_dist": dist})
     with TestClient(create_app(spa_settings)) as client:
         assert "CrefleAI" in client.get("/").text
-        # SPA 딥링크는 index.html로 폴백
-        assert "CrefleAI" in client.get("/admin/models-page").text
+        # SPA 딥링크는 index.html로 폴백 (실제 충돌 라우트)
+        assert "CrefleAI" in client.get("/admin/models").text
         # API 라우트는 정적 서빙보다 우선
         assert client.get("/api/admin/models").status_code == 401
 

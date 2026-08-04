@@ -81,12 +81,12 @@ export default function ModelsPage() {
               </td>
               <td>
                 {(m.status === "not_downloaded" || m.status === "failed") && (
-                  <button onClick={() => act(`/admin/models/${m.id}/download`)}>
+                  <button onClick={() => act(`/api/admin/models/${m.id}/download`)}>
                     다운로드
                   </button>
                 )}
                 {m.status === "ready" && (
-                  <button onClick={() => act(`/admin/models/${m.id}/serve`)}>
+                  <button onClick={() => act(`/api/admin/models/${m.id}/serve`)}>
                     서비스 시작
                   </button>
                 )}
