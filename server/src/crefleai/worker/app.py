@@ -23,6 +23,7 @@ def _to_llama_kwargs(body: dict) -> dict:
 def create_app(model_path: str, model_id: str, n_ctx: int, llama_factory=None) -> FastAPI:
     state: dict = {"llama": None, "ready": False}
     lock = asyncio.Lock()
+    llama_mutex = threading.Lock()  # llama 호출 자체의 스레드 수준 독점 — 이벤트 루프와 무관하게 보장
     factory = llama_factory or _default_llama_factory
 
     @asynccontextmanager
@@ -30,6 +31,10 @@ def create_app(model_path: str, model_id: str, n_ctx: int, llama_factory=None) -
         state["llama"] = await asyncio.to_thread(factory, model_path, n_ctx)
         state["ready"] = True
         yield
+
+    def _call_llama(kwargs: dict) -> dict:
+        with llama_mutex:
+            return state["llama"].create_chat_completion(**kwargs)
 
     app = FastAPI(lifespan=lifespan)
 
@@ -44,9 +49,7 @@ def create_app(model_path: str, model_id: str, n_ctx: int, llama_factory=None) -
         if body.get("stream"):
             return StreamingResponse(_stream(kwargs), media_type="text/event-stream")
         async with lock:
-            result = await asyncio.to_thread(
-                lambda: state["llama"].create_chat_completion(**kwargs)
-            )
+            result = await asyncio.to_thread(_call_llama, kwargs)
         result["model"] = model_id
         return JSONResponse(result)
 
@@ -70,9 +73,10 @@ def create_app(model_path: str, model_id: str, n_ctx: int, llama_factory=None) -
 
             def produce():
                 try:
-                    for chunk in state["llama"].create_chat_completion(stream=True, **kwargs):
-                        if stop.is_set() or not _put(("chunk", chunk)):
-                            return
+                    with llama_mutex:
+                        for chunk in state["llama"].create_chat_completion(stream=True, **kwargs):
+                            if stop.is_set() or not _put(("chunk", chunk)):
+                                return
                     _put(("done", None))
                 except Exception as e:  # noqa: BLE001 — 클라이언트에 에러 이벤트로 전달
                     _put(("error", str(e)))
@@ -93,12 +97,11 @@ def create_app(model_path: str, model_id: str, n_ctx: int, llama_factory=None) -
                         yield "data: [DONE]\n\n"
                         break
             finally:
-                # 소비자가 끊겨도(취소 포함) 프로듀서를 반드시 세우고 락 독점을 지킨다.
-                # sync join은 이벤트 루프를 최대 2초 블로킹하지만, 취소된 스코프에서
-                # await는 즉시 재취소되므로 동기 join이 유일하게 확실한 방법이다.
+                # 소비자가 끊겨도 프로듀서에 중단 신호를 보내고 큐를 비워
+                # 블로킹된 put을 풀어준다. llama 호출 독점은 llama_mutex가
+                # 스레드 수준에서 보장하므로 join으로 이벤트 루프를 막지 않는다.
                 stop.set()
                 while not queue.empty():
                     queue.get_nowait()
-                producer.join(timeout=2.0)
 
     return app
