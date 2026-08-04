@@ -1,14 +1,25 @@
+import asyncio
 import datetime as dt
+from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 
-from crefleai.api.deps import ADMIN_COOKIE, get_app_settings, get_db, require_admin
+from crefleai.api.deps import (
+    ADMIN_COOKIE,
+    get_app_settings,
+    get_catalog,
+    get_db,
+    get_download_manager,
+    get_worker_manager,
+    require_admin,
+)
 from crefleai.api.errors import APIError
 from crefleai.auth.admin import ADMIN_SESSION_HOURS, login_admin
 from crefleai.auth.tokens import create_user_token
 from crefleai.config import Settings
 from crefleai.db import Database
+from crefleai.models.catalog import model_file
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -85,4 +96,73 @@ def revoke_token(
     revoked = db.revoke_token(jti, dt.datetime.now(dt.timezone.utc).isoformat())
     if not revoked:
         raise APIError(404, "해당 토큰이 없거나 이미 폐기되었습니다", "invalid_request_error")
+    return {"ok": True}
+
+
+@router.get("/models")
+def list_models(
+    request: Request,
+    catalog: dict = Depends(get_catalog),
+    _admin: dict = Depends(require_admin),
+):
+    dm = request.app.state.download_manager
+    wm = request.app.state.worker_manager
+    models = []
+    for m in catalog.values():
+        state = dm.state_for(m.id)
+        if wm.model_id == m.id and wm.status == "running":
+            status = "serving"
+        elif state.status == "idle":
+            status = "not_downloaded"
+        else:
+            status = state.status
+        models.append(
+            {**asdict(m), "status": status, "progress": state.progress, "error": state.error}
+        )
+    return {
+        "models": models,
+        "worker": {"status": wm.status, "model_id": wm.model_id, "error": wm.error},
+    }
+
+
+@router.post("/models/{model_id}/download", status_code=202)
+async def download_model(
+    model_id: str,
+    catalog: dict = Depends(get_catalog),
+    dm=Depends(get_download_manager),
+    _admin: dict = Depends(require_admin),
+):
+    if model_id not in catalog:
+        raise APIError(404, f"카탈로그에 없는 모델입니다: {model_id}", "invalid_request_error")
+    if not dm.start(model_id):
+        raise APIError(409, "이미 다운로드되었거나 진행 중입니다", "invalid_request_error")
+    return {"ok": True}
+
+
+@router.post("/models/{model_id}/serve", status_code=202)
+async def serve_model(
+    model_id: str,
+    request: Request,
+    catalog: dict = Depends(get_catalog),
+    dm=Depends(get_download_manager),
+    _admin: dict = Depends(require_admin),
+):
+    model = catalog.get(model_id)
+    if model is None:
+        raise APIError(404, f"카탈로그에 없는 모델입니다: {model_id}", "invalid_request_error")
+    if dm.state_for(model_id).status != "ready":
+        raise APIError(409, "모델이 아직 다운로드되지 않았습니다", "invalid_request_error")
+
+    wm = request.app.state.worker_manager
+    db = request.app.state.db
+    path = model_file(request.app.state.settings.models_dir, model)
+
+    async def _serve_and_persist():
+        try:
+            await wm.serve(model, path)
+            db.set_setting("serving_model", model_id)
+        except Exception:  # noqa: BLE001 — 실패 상태는 wm.status/error로 노출된다
+            pass
+
+    request.app.state.serve_task = asyncio.create_task(_serve_and_persist())
     return {"ok": True}

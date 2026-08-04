@@ -25,3 +25,15 @@ def require_admin(request: Request) -> dict:
         return verify_admin_token(request.app.state.settings.jwt_secret, token)
     except InvalidTokenError as e:
         raise APIError(401, "관리자 세션이 유효하지 않습니다", "invalid_request_error") from e
+
+
+def get_catalog(request: Request) -> dict:
+    return request.app.state.catalog
+
+
+def get_download_manager(request: Request):
+    return request.app.state.download_manager
+
+
+def get_worker_manager(request: Request):
+    return request.app.state.worker_manager

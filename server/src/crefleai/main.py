@@ -9,6 +9,9 @@ from crefleai.api.errors import APIError
 from crefleai.auth.admin import bootstrap_admin
 from crefleai.config import Settings, get_settings
 from crefleai.db import Database
+from crefleai.models.catalog import load_catalog
+from crefleai.models.downloads import DownloadManager
+from crefleai.models.worker_manager import WorkerManager
 
 
 @asynccontextmanager
@@ -16,7 +19,11 @@ async def _lifespan(app: FastAPI):
     settings: Settings = app.state.settings
     app.state.db = Database(settings.db_path)
     bootstrap_admin(app.state.db, settings)
+    app.state.catalog = load_catalog()
+    app.state.download_manager = DownloadManager(settings.models_dir, app.state.catalog)
+    app.state.worker_manager = WorkerManager(settings.worker_port, settings.worker_ctx)
     yield
+    await app.state.worker_manager.stop()
     app.state.db.close()
 
 
