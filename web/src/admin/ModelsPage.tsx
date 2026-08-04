@@ -20,7 +20,7 @@ export default function ModelsPage() {
 
   const load = useCallback(async () => {
     try {
-      setData(await api<AdminModels>("/admin/models"));
+      setData(await api<AdminModels>("/api/admin/models"));
     } catch {
       // 폴링 중 일시 오류는 다음 주기에 회복된다
     }

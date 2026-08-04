@@ -20,7 +20,7 @@ from crefleai.config import Settings
 from crefleai.db import Database
 from crefleai.models.catalog import model_file
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 class LoginBody(BaseModel):

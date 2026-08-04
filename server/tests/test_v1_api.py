@@ -44,7 +44,7 @@ class FakeWorkerManager:
 @pytest.fixture
 def user_token(admin_client):
     return admin_client.post(
-        "/admin/tokens", json={"user_name": "홍길동", "purpose": "테스트"}
+        "/api/admin/tokens", json={"user_name": "홍길동", "purpose": "테스트"}
     ).json()["token"]
 
 

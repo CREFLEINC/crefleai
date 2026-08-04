@@ -8,7 +8,7 @@ it("JSON 응답을 반환한다", async () => {
     "fetch",
     vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 })),
   );
-  await expect(api("/admin/me")).resolves.toEqual({ ok: true });
+  await expect(api("/api/admin/me")).resolves.toEqual({ ok: true });
 });
 
 it("에러 응답이면 OpenAI 형식 메시지로 ApiError를 던진다", async () => {
@@ -20,7 +20,7 @@ it("에러 응답이면 OpenAI 형식 메시지로 ApiError를 던진다", async
       }),
     ),
   );
-  await expect(api("/admin/me")).rejects.toMatchObject({
+  await expect(api("/api/admin/me")).rejects.toMatchObject({
     status: 401,
     message: "로그인이 필요합니다",
   });

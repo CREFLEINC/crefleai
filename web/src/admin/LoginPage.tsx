@@ -12,7 +12,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     try {
-      await api("/admin/login", {
+      await api("/api/admin/login", {
         method: "POST",
         body: JSON.stringify({ username, password }),
       });

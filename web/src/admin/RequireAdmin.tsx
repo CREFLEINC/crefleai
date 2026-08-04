@@ -6,7 +6,7 @@ export default function RequireAdmin({ children }: { children: ReactNode }) {
   const [state, setState] = useState<"loading" | "ok" | "unauthorized">("loading");
 
   useEffect(() => {
-    api("/admin/me")
+    api("/api/admin/me")
       .then(() => setState("ok"))
       .catch(() => setState("unauthorized"));
   }, []);

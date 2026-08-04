@@ -14,9 +14,11 @@ def test_spa_서빙과_폴백(settings, tmp_path):
         # SPA 딥링크는 index.html로 폴백
         assert "CrefleAI" in client.get("/admin/models-page").text
         # API 라우트는 정적 서빙보다 우선
-        assert client.get("/admin/models").status_code == 401
+        assert client.get("/api/admin/models").status_code == 401
 
 
-def test_dist_없으면_정적_서빙_생략(settings):
-    with TestClient(create_app(settings)) as client:
-        assert client.get("/admin/models").status_code == 401
+def test_dist_없으면_정적_서빙_생략(settings, tmp_path):
+    no_dist = settings.model_copy(update={"web_dist": tmp_path / "no-such-dist"})
+    with TestClient(create_app(no_dist)) as client:
+        assert client.get("/").status_code == 404  # 정적 마운트 없음
+        assert client.get("/api/admin/models").status_code == 401  # API는 정상

@@ -10,7 +10,7 @@ export default function TokensPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    setTokens((await api<{ tokens: TokenInfo[] }>("/admin/tokens")).tokens);
+    setTokens((await api<{ tokens: TokenInfo[] }>("/api/admin/tokens")).tokens);
   }
 
   useEffect(() => {
@@ -21,7 +21,7 @@ export default function TokensPage() {
     e.preventDefault();
     setError(null);
     try {
-      const token = await api<CreatedToken>("/admin/tokens", {
+      const token = await api<CreatedToken>("/api/admin/tokens", {
         method: "POST",
         body: JSON.stringify({ user_name: userName, purpose }),
       });

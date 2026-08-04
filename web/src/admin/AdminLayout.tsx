@@ -6,7 +6,7 @@ export default function AdminLayout() {
 
   async function logout() {
     try {
-      await api("/admin/logout", { method: "POST" });
+      await api("/api/admin/logout", { method: "POST" });
     } catch (err) {
       // Silently ignore logout errors - user navigates to login regardless
     } finally {

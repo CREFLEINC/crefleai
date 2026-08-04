@@ -22,7 +22,7 @@ class FakeWorkerManager:
 
 
 def test_모델_목록은_카탈로그와_상태를_반환(admin_client):
-    body = admin_client.get("/admin/models").json()
+    body = admin_client.get("/api/admin/models").json()
     catalog = load_catalog()
     assert {m["id"] for m in body["models"]} == set(catalog)
     assert all(m["status"] == "not_downloaded" for m in body["models"])
@@ -30,12 +30,12 @@ def test_모델_목록은_카탈로그와_상태를_반환(admin_client):
 
 
 def test_없는_모델_다운로드는_404(admin_client):
-    assert admin_client.post("/admin/models/없는모델/download").status_code == 404
+    assert admin_client.post("/api/admin/models/없는모델/download").status_code == 404
 
 
 def test_미다운로드_모델_서빙은_409(admin_client):
     model_id = next(iter(load_catalog()))
-    assert admin_client.post(f"/admin/models/{model_id}/serve").status_code == 409
+    assert admin_client.post(f"/api/admin/models/{model_id}/serve").status_code == 409
 
 
 def test_서빙_성공_흐름(admin_client):
@@ -50,7 +50,7 @@ def test_서빙_성공_흐름(admin_client):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"fake gguf")  # 다운로드 완료 상태로 만든다
 
-        res = admin_client.post(f"/admin/models/{model_id}/serve")
+        res = admin_client.post(f"/api/admin/models/{model_id}/serve")
         assert res.status_code == 202
 
         for _ in range(50):  # 백그라운드 서빙 완료 대기
@@ -60,7 +60,7 @@ def test_서빙_성공_흐름(admin_client):
         assert fake_wm.served == [(model_id, path)]
         assert app.state.db.get_setting("serving_model") == model_id
 
-        body = admin_client.get("/admin/models").json()
+        body = admin_client.get("/api/admin/models").json()
         serving = next(m for m in body["models"] if m["id"] == model_id)
         assert serving["status"] == "serving"
     finally:
@@ -68,7 +68,7 @@ def test_서빙_성공_흐름(admin_client):
 
 
 def test_모델_API도_로그인_필요(client):
-    assert client.get("/admin/models").status_code == 401
+    assert client.get("/api/admin/models").status_code == 401
 
 
 def test_서빙_중복_요청은_409(admin_client):
@@ -89,9 +89,9 @@ def test_서빙_중복_요청은_409(admin_client):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"fake gguf")
 
-        first = admin_client.post(f"/admin/models/{model_id}/serve")
+        first = admin_client.post(f"/api/admin/models/{model_id}/serve")
         assert first.status_code == 202
-        second = admin_client.post(f"/admin/models/{model_id}/serve")
+        second = admin_client.post(f"/api/admin/models/{model_id}/serve")
         assert second.status_code == 409
 
         for _ in range(50):
