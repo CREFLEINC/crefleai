@@ -1,7 +1,9 @@
 import pytest
+from fastapi.testclient import TestClient
 
 from crefleai.config import Settings
 from crefleai.db import Database
+from crefleai.main import create_app
 
 
 @pytest.fixture
@@ -19,3 +21,17 @@ def db(settings):
     database = Database(settings.db_path)
     yield database
     database.close()
+
+
+@pytest.fixture
+def client(settings):
+    app = create_app(settings)
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
+def admin_client(client):
+    res = client.post("/admin/login", json={"username": "admin", "password": "admin-pw"})
+    assert res.status_code == 200
+    return client
