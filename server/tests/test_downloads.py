@@ -14,7 +14,19 @@ MODEL = CatalogModel(
     license="MIT",
     description="테스트",
 )
-CATALOG = {"tiny": MODEL}
+SHARDED = CatalogModel(
+    id="big",
+    display_name="Big",
+    hf_repo="org/big-gguf",
+    filename="Q4/big-00001-of-00003.gguf",
+    quantization="Q4_K_M",
+    size_bytes=30,
+    context_length=2048,
+    license="MIT",
+    description="분할 테스트",
+    shards=["Q4/big-00002-of-00003.gguf", "Q4/big-00003-of-00003.gguf"],
+)
+CATALOG = {"tiny": MODEL, "big": SHARDED}
 CONTENT = b"x" * 100
 
 
@@ -60,6 +72,49 @@ async def test_실패시_part_정리_후_재시도_가능(tmp_path):
     assert state.error is not None
     assert not (tmp_path / "models" / "tiny.gguf.part").exists()
     assert dm.start("tiny") is True  # 재시도 허용
+
+
+async def test_분할_모델은_모든_파트를_받아_저장한다(tmp_path):
+    def handler(request):
+        assert request.url.path.startswith("/org/big-gguf/resolve/main/Q4/")
+        return httpx.Response(200, content=b"x" * 10, headers={"content-length": "10"})
+
+    dm = make_manager(tmp_path, handler)
+    assert dm.start("big") is True
+    await dm.wait("big")
+
+    state = dm.state_for("big")
+    assert state.status == "ready"
+    assert state.progress == 1.0
+    for name in ("big-00001-of-00003", "big-00002-of-00003", "big-00003-of-00003"):
+        assert (tmp_path / "models" / "Q4" / f"{name}.gguf").read_bytes() == b"x" * 10
+
+
+async def test_분할_모델은_일부_파트만_있으면_ready가_아니다(tmp_path):
+    (tmp_path / "models" / "Q4").mkdir(parents=True)
+    (tmp_path / "models" / "Q4" / "big-00001-of-00003.gguf").write_bytes(b"x")
+    dm = make_manager(tmp_path, lambda request: httpx.Response(500))
+    assert dm.state_for("big").status == "idle"
+
+
+async def test_분할_다운로드_실패시_part_정리_후_재시도_가능(tmp_path):
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return httpx.Response(200, content=b"x" * 10, headers={"content-length": "10"})
+        return httpx.Response(404)
+
+    dm = make_manager(tmp_path, handler)
+    assert dm.start("big") is True
+    await dm.wait("big")
+
+    state = dm.state_for("big")
+    assert state.status == "failed"
+    assert state.error is not None
+    assert list((tmp_path / "models").rglob("*.part")) == []
+    assert dm.start("big") is True  # 재시도 허용
 
 
 async def test_클라이언트_생성_실패도_failed_상태(tmp_path, monkeypatch):
