@@ -85,6 +85,24 @@ def test_스트리밍_completion():
     assert all(c["model"] == "test-model" for c in chunks)
 
 
+class FailingLlama:
+    def create_chat_completion(self, stream=False, **kwargs):
+        raise RuntimeError("CUDA out of memory")
+
+
+def test_비스트리밍_예외는_OpenAI_오류_형식_500으로_반환():
+    app = create_app(
+        "/fake/path.gguf", "test-model", 2048, llama_factory=lambda p, c: FailingLlama()
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        res = client.post("/completion", json={"messages": [{"role": "user", "content": "hi"}]})
+    assert res.status_code == 500
+    body = res.json()
+    assert body["error"]["type"] == "server_error"
+    assert "CUDA out of memory" in body["error"]["message"]
+    assert body["error"]["code"] is None
+
+
 class ConcurrencyTrackingFake:
     """동시 호출 수를 추적하는 fake — 락 독점 보장 검증용."""
 
