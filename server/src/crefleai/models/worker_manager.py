@@ -38,6 +38,7 @@ class WorkerManager:
         self.status = "stopped"
         self.error: str | None = None
         self._serve_lock = asyncio.Lock()
+        self._stop_requested = asyncio.Event()
 
     @property
     def base_url(self) -> str:
@@ -83,6 +84,9 @@ class WorkerManager:
         deadline = loop.time() + self._startup_timeout
         async with httpx.AsyncClient(timeout=5.0) as client:
             while loop.time() < deadline:
+                # stop()이 락을 기다리는 동안 startup_timeout까지 붙잡지 않도록 조기 이탈
+                if self._stop_requested.is_set():
+                    raise WorkerError("셧다운 요청으로 기동을 중단했습니다")
                 if self._proc.returncode is not None:
                     raise WorkerError(f"워커가 기동 중 종료됨 (exit code {self._proc.returncode})")
                 try:
@@ -125,8 +129,12 @@ class WorkerManager:
                 await self._proc.wait()
 
     async def stop(self) -> None:
-        async with self._serve_lock:
-            await self._stop_locked()
+        self._stop_requested.set()
+        try:
+            async with self._serve_lock:
+                await self._stop_locked()
+        finally:
+            self._stop_requested.clear()
 
     async def _stop_locked(self) -> None:
         self.status = "stopping"

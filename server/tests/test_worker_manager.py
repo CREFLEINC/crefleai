@@ -101,6 +101,33 @@ async def test_정상_가동_후_크래시는_재시작_카운터를_리셋한�
     await wm.stop()
 
 
+async def test_셧다운시_재스폰_대기를_조기_중단한다():
+    calls = {"n": 0}
+
+    def flaky_then_slow(model, model_path):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return [sys.executable, str(FAKE_WORKER), "--port", str(PORT)]
+        return [sys.executable, "-c", "import time; time.sleep(60)"]  # health 응답 없음
+
+    wm = WorkerManager(PORT, 2048, command_builder=flaky_then_slow, startup_timeout=30)
+    await wm.serve(MODEL, Path("/fake/tiny.gguf"))
+
+    wm._proc.terminate()  # 크래시 → watchdog이 ready 없는 프로세스로 재스폰 시작
+    for _ in range(100):
+        await asyncio.sleep(0.1)
+        if calls["n"] >= 2:
+            break
+    assert calls["n"] >= 2
+
+    # 재스폰이 startup_timeout(30초)을 기다리는 동안에도 stop()은 빠르게 끝나야 한다
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    await asyncio.wait_for(wm.stop(), timeout=10)
+    assert loop.time() - start < 5
+    assert wm.status == "stopped"
+
+
 async def test_동시_serve_호출은_직렬화된다():
     wm = WorkerManager(PORT, 2048, command_builder=fake_command, startup_timeout=15)
     results = await asyncio.gather(
