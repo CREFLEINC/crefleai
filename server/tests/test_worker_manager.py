@@ -29,6 +29,22 @@ async def test_서빙_시작과_중지():
     assert wm.status == "stopped"
 
 
+async def test_context_length는_모델과_ctx_중_작은_값():
+    wm = WorkerManager(PORT, 1024, command_builder=fake_command, startup_timeout=15)
+    assert wm.context_length is None  # 서빙 전에는 알 수 없음
+
+    await wm.serve(MODEL, Path("/fake/tiny.gguf"))
+    assert wm.context_length == 1024  # min(모델 2048, ctx 1024)
+    await wm.stop()
+
+
+async def test_context_length는_모델_한계를_넘지_않는다():
+    wm = WorkerManager(PORT, 8192, command_builder=fake_command, startup_timeout=15)
+    await wm.serve(MODEL, Path("/fake/tiny.gguf"))
+    assert wm.context_length == 2048  # min(모델 2048, ctx 8192)
+    await wm.stop()
+
+
 async def test_기동_실패시_WorkerError():
     def broken_command(model, model_path):
         return [sys.executable, "-c", "import time; time.sleep(60)"]  # health 응답 없음
