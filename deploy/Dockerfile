@@ -22,7 +22,7 @@ COPY server/ ./
 RUN uv sync --frozen --no-dev
 # llama-cpp-python은 Blackwell(sm_120) 대상 CUDA 빌드 — 수십 분 소요
 RUN CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=120" \
-    uv pip install --python /opt/venv/bin/python --no-cache-dir "llama-cpp-python>=0.3"
+    uv pip install --python /opt/venv/bin/python --no-cache-dir "llama-cpp-python>=0.3.34"
 
 FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04 AS runtime
 # llama.cpp(ggml)가 OpenMP를 사용 — runtime 베이스에는 libgomp1이 없다
