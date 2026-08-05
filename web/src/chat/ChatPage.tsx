@@ -4,6 +4,8 @@ import type { ChatMessage } from "../types";
 
 export default function ChatPage() {
   const [token, setToken] = useState(localStorage.getItem("crefleai_token") ?? "");
+  // 최초 마운트 시에만 토큰 유무로 초기화 — 이후에는 사용자가 직접 접고 펼친다
+  const [settingsOpen, setSettingsOpen] = useState(!token);
   const [system, setSystem] = useState("");
   const [temperature, setTemperature] = useState(0.7);
   const [input, setInput] = useState("");
@@ -69,7 +71,7 @@ export default function ChatPage() {
   return (
     <main className="chat">
       <h1>CrefleAI Chat 테스트</h1>
-      <details open={!token}>
+      <details open={settingsOpen} onToggle={(e) => setSettingsOpen(e.currentTarget.open)}>
         <summary>연결 설정</summary>
         <label>
           API 토큰
