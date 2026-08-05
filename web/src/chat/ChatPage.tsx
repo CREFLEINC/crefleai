@@ -1,6 +1,29 @@
 import { useState, type FormEvent } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { splitSseEvents } from "../sse";
+import { splitThink } from "../think";
 import type { ChatMessage } from "../types";
+
+function AssistantContent({ content }: { content: string }) {
+  const { think, answer, thinking } = splitThink(content);
+  if (think === null && !answer) return <p>...</p>;
+  return (
+    <>
+      {think !== null && (
+        <details className="think">
+          <summary>{thinking ? "추론 중..." : "추론 과정"}</summary>
+          <p>{think}</p>
+        </details>
+      )}
+      {answer && (
+        <div className="markdown">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
+        </div>
+      )}
+    </>
+  );
+}
 
 export default function ChatPage() {
   const [token, setToken] = useState(localStorage.getItem("crefleai_token") ?? "");
@@ -26,6 +49,7 @@ export default function ChatPage() {
     setMessages([...history, { role: "assistant", content: "" }]);
     setInput("");
     setBusy(true);
+    let assistant = "";
     try {
       const payload: ChatMessage[] = system
         ? [{ role: "system", content: system }, ...history]
@@ -45,7 +69,6 @@ export default function ChatPage() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let assistant = "";
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -62,7 +85,10 @@ export default function ChatPage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "요청 실패");
-      setMessages(history); // 빈 어시스턴트 말풍선 제거
+      // 부분 수신 텍스트는 유지하고, 아무것도 못 받았으면 빈 말풍선만 제거
+      setMessages(
+        assistant ? [...history, { role: "assistant", content: assistant }] : history,
+      );
     } finally {
       setBusy(false);
     }
@@ -102,7 +128,11 @@ export default function ChatPage() {
         {messages.map((m, i) => (
           <li key={i} className={m.role}>
             <strong>{m.role === "user" ? "나" : "모델"}</strong>
-            <p>{m.content || "..."}</p>
+            {m.role === "assistant" ? (
+              <AssistantContent content={m.content} />
+            ) : (
+              <p>{m.content || "..."}</p>
+            )}
           </li>
         ))}
       </ol>
