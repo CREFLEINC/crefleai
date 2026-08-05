@@ -17,6 +17,21 @@ def test_spa_서빙과_폴백(settings, tmp_path):
         assert client.get("/api/admin/models").status_code == 401
 
 
+def test_미지의_api_경로는_json_404(settings, tmp_path):
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html>CrefleAI</html>")
+
+    spa_settings = settings.model_copy(update={"web_dist": dist})
+    with TestClient(create_app(spa_settings)) as client:
+        for path in ("/v1/nonexistent", "/api/unknown", "/v1", "/api"):
+            res = client.get(path)
+            assert res.status_code == 404, path
+            assert res.json()["error"]["type"] == "invalid_request_error", path
+        # 클라이언트 라우트는 여전히 index.html로 폴백
+        assert "CrefleAI" in client.get("/admin/models").text
+
+
 def test_dist_없으면_정적_서빙_생략(settings, tmp_path):
     no_dist = settings.model_copy(update={"web_dist": tmp_path / "no-such-dist"})
     with TestClient(create_app(no_dist)) as client:
