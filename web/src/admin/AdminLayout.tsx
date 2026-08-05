@@ -7,8 +7,8 @@ export default function AdminLayout() {
   async function logout() {
     try {
       await api("/api/admin/logout", { method: "POST" });
-    } catch (err) {
-      // Silently ignore logout errors - user navigates to login regardless
+    } catch {
+      // 로그아웃 실패와 무관하게 로그인 화면으로 이동한다
     } finally {
       navigate("/login");
     }
