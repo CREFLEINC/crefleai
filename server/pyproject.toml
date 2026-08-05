@@ -1,6 +1,6 @@
 [project]
 name = "crefleai"
-version = "0.1.1"
+version = "0.2.0"
 description = "CREFLE 사내 로컬 LLM 서비스 서버"
 requires-python = ">=3.11"
 dependencies = [
@@ -13,7 +13,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-worker = ["llama-cpp-python>=0.3"]
+# 0.3.34+: 카탈로그의 신형 아키텍처(gemma4, qwen35, deepseek2 등) 지원 llama.cpp 내장
+worker = ["llama-cpp-python>=0.3.34"]
 
 [project.scripts]
 crefleai = "crefleai.main:run"
