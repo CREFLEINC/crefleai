@@ -79,6 +79,28 @@ async def test_재시작_한도_초과시_failed():
     await wm.stop()
 
 
+async def test_정상_가동_후_크래시는_재시작_카운터를_리셋한다():
+    wm = WorkerManager(
+        PORT, 2048, command_builder=fake_command, startup_timeout=15,
+        max_restarts=1, stable_after=0.5,
+    )
+    await wm.serve(MODEL, Path("/fake/tiny.gguf"))
+
+    # max_restarts=1을 넘는 총 3회의 산발 크래시 — 각 크래시 전 stable_after 이상 정상 가동.
+    # 카운터가 리셋되지 않으면 2번째 크래시에서 failed가 된다.
+    for _ in range(3):
+        await asyncio.sleep(0.7)
+        pid = wm._proc.pid
+        wm._proc.terminate()
+        for _ in range(100):
+            await asyncio.sleep(0.2)
+            if wm.status == "running" and wm._proc.pid != pid:
+                break
+        assert wm.status == "running"
+        assert wm._proc.pid != pid
+    await wm.stop()
+
+
 async def test_동시_serve_호출은_직렬화된다():
     wm = WorkerManager(PORT, 2048, command_builder=fake_command, startup_timeout=15)
     results = await asyncio.gather(

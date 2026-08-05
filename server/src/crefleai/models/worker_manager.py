@@ -21,12 +21,15 @@ class WorkerManager:
         command_builder=None,
         startup_timeout: float = 600.0,
         max_restarts: int = 3,
+        stable_after: float = 300.0,
     ):
         self._port = port
         self._ctx = ctx
         self._command_builder = command_builder or self._default_command
         self._startup_timeout = startup_timeout
         self._max_restarts = max_restarts
+        self._stable_after = stable_after
+        self._ready_at: float | None = None
         self._proc: asyncio.subprocess.Process | None = None
         self._watchdog: asyncio.Task | None = None
         self._model: CatalogModel | None = None
@@ -72,6 +75,7 @@ class WorkerManager:
             await self._terminate()
             raise
         self.status = "running"
+        self._ready_at = asyncio.get_running_loop().time()
         self._watchdog = asyncio.create_task(self._watch())
 
     async def _wait_ready(self) -> None:
@@ -96,6 +100,11 @@ class WorkerManager:
         async with self._serve_lock:
             if self.status == "stopping" or proc is not self._proc:
                 return
+            # stable_after 이상 정상 가동 후의 크래시는 크래시 루프가 아니므로
+            # 카운터를 리셋 — 짧은 간격의 반복 크래시만 한도에 걸리게 한다
+            uptime = asyncio.get_running_loop().time() - self._ready_at
+            if uptime >= self._stable_after:
+                self._restarts = 0
             self._restarts += 1
             if self._restarts > self._max_restarts:
                 self.status = "failed"
