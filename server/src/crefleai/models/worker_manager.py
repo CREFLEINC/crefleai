@@ -48,6 +48,13 @@ class WorkerManager:
     def model_id(self) -> str | None:
         return self._model.id if self._model else None
 
+    @property
+    def context_length(self) -> int | None:
+        """서빙 모델의 유효 컨텍스트 크기 — 모델 한계와 워커 n_ctx 중 작은 값."""
+        if self._model is None:
+            return None
+        return min(self._model.context_length, self._ctx)
+
     def _default_command(self, model: CatalogModel, model_path: Path) -> list[str]:
         return [
             sys.executable, "-m", "crefleai.worker",

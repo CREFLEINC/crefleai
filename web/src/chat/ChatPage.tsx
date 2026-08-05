@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { splitSseEvents } from "../sse";
@@ -6,6 +6,19 @@ import { splitThink } from "../think";
 import type { ChatMessage } from "../types";
 
 const DEFAULT_TEMPERATURE = 0.7;
+const ESTIMATED_CHARS_PER_TOKEN = 3; // 한글 ~2자/토큰, 영문 ~4자/토큰 사이의 근사치
+const CONTEXT_WARNING_RATIO = 0.8;
+
+// 마지막 응답의 usage 기준 실제 토큰 수. messageCount 시점의 대화까지만 유효하다.
+interface ContextUsage {
+  tokens: number;
+  messageCount: number;
+}
+
+function estimateTokens(texts: string[]): number {
+  const totalChars = texts.reduce((sum, text) => sum + text.length, 0);
+  return Math.ceil(totalChars / ESTIMATED_CHARS_PER_TOKEN);
+}
 
 function loadTemperature(): number {
   const saved = localStorage.getItem("crefleai_temperature");
@@ -44,6 +57,29 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [contextLength, setContextLength] = useState<number | null>(null);
+  const [usage, setUsage] = useState<ContextUsage | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/v1/models", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const body = await res.json();
+        const length = body?.data?.[0]?.context_length;
+        if (!cancelled && typeof length === "number") setContextLength(length);
+      } catch {
+        // 조회 실패는 사용량 표시 생략으로 처리한다 — 채팅 동작은 막지 않는다
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   function saveToken(value: string) {
     setToken(value);
@@ -98,6 +134,12 @@ export default function ChatPage() {
           if (event === "[DONE]") continue;
           const parsed = JSON.parse(event);
           if (parsed.error) throw new Error(parsed.error.message);
+          if (parsed.usage?.prompt_tokens != null) {
+            setUsage({
+              tokens: parsed.usage.prompt_tokens + (parsed.usage.completion_tokens ?? 0),
+              messageCount: history.length + 1,
+            });
+          }
           assistant += parsed.choices?.[0]?.delta?.content ?? "";
           setMessages([...history, { role: "assistant", content: assistant }]);
         }
@@ -112,6 +154,13 @@ export default function ChatPage() {
       setBusy(false);
     }
   }
+
+  // 마지막 응답의 usage가 현재 대화 상태를 커버하면 실제 값, 아니면 문자 수 근사치
+  const usedTokens =
+    usage && usage.messageCount === messages.length
+      ? usage.tokens
+      : estimateTokens([system, ...messages.map((m) => m.content)]);
+  const usageRatio = contextLength ? usedTokens / contextLength : 0;
 
   return (
     <main className="chat">
@@ -155,6 +204,11 @@ export default function ChatPage() {
           </li>
         ))}
       </ol>
+      {contextLength !== null && contextLength > 0 && (
+        <p className={usageRatio >= CONTEXT_WARNING_RATIO ? "context-usage warning" : "context-usage"}>
+          컨텍스트 사용량 약 {usedTokens.toLocaleString()} / {contextLength.toLocaleString()} ({Math.round(usageRatio * 100)}%)
+        </p>
+      )}
       {error && <p role="alert">{error}</p>}
 
       <form onSubmit={send}>

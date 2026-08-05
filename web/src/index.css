@@ -67,3 +67,11 @@ textarea {
 [role="alert"] {
   color: #c0392b;
 }
+.context-usage {
+  font-size: 0.85rem;
+  color: #888;
+}
+.context-usage.warning {
+  color: #c0392b;
+  font-weight: 600;
+}

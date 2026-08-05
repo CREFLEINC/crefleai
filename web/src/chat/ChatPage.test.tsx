@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import ChatPage from "./ChatPage";
@@ -17,6 +17,23 @@ function sseResponse(...events: string[]): Response {
     },
   });
   return new Response(stream, { status: 200 });
+}
+
+function modelsResponse(contextLength: number | null) {
+  const data =
+    contextLength === null ? [] : [{ id: "m", object: "model", context_length: contextLength }];
+  return new Response(JSON.stringify({ object: "list", data }), { status: 200 });
+}
+
+// /v1/models(마운트 조회)와 /v1/chat/completions(전송)를 URL로 구분해 스텁한다
+function stubFetch(completion?: Response, contextLength: number | null = null) {
+  const mock = vi.fn(async (url: RequestInfo | URL) => {
+    if (String(url).includes("/v1/models")) return modelsResponse(contextLength);
+    if (!completion) throw new Error("completion 응답이 스텁되지 않았습니다");
+    return completion;
+  });
+  vi.stubGlobal("fetch", mock);
+  return mock;
 }
 
 async function sendMessage(text: string) {
@@ -72,12 +89,66 @@ it("저장된 Temperature가 숫자가 아니면 기본값 0.7로 동작한다",
   expect(screen.getByLabelText(/Temperature/)).toHaveValue("0.7");
 });
 
+it("모델의 컨텍스트 윈도우 크기와 현재 사용량을 표시한다", async () => {
+  localStorage.setItem("crefleai_token", "t");
+  stubFetch(undefined, 100);
+  render(<ChatPage />);
+  const usage = await screen.findByText(/컨텍스트 사용량/);
+  expect(usage).toHaveTextContent("컨텍스트 사용량 약 0 / 100 (0%)");
+  expect(usage).not.toHaveClass("warning");
+});
+
+it("대화가 쌓이면 문자 수 근사치로 사용량이 늘어난다", async () => {
+  localStorage.setItem("crefleai_token", "t");
+  stubFetch(sseResponse(delta("답")), 100);
+
+  await sendMessage("안녕하세요"); // user 5자 + assistant 1자 = 6자 → ceil(6/3) = 2토큰
+
+  expect(await screen.findByText(/컨텍스트 사용량 약 2 \/ 100 \(2%\)/)).toBeInTheDocument();
+});
+
+it("사용량이 80% 이상이면 경고 스타일을 적용한다", async () => {
+  localStorage.setItem("crefleai_token", "t");
+  stubFetch(sseResponse(delta("답변")), 10);
+
+  await sendMessage("a".repeat(22)); // 22자 + 2자 = 24자 → 8토큰 = 80%
+
+  const usage = await screen.findByText(/컨텍스트 사용량/);
+  expect(usage).toHaveClass("warning");
+});
+
+it("스트림에 usage가 포함되면 실제 토큰 수를 우선 사용한다", async () => {
+  localStorage.setItem("crefleai_token", "t");
+  stubFetch(
+    sseResponse(
+      delta("답"),
+      JSON.stringify({
+        choices: [{ delta: {} }],
+        usage: { prompt_tokens: 50, completion_tokens: 10 },
+      }),
+    ),
+    100,
+  );
+
+  await sendMessage("안녕");
+
+  expect(await screen.findByText(/컨텍스트 사용량 약 60 \/ 100 \(60%\)/)).toBeInTheDocument();
+});
+
+it("컨텍스트 크기를 조회할 수 없으면 사용량을 표시하지 않는다", async () => {
+  localStorage.setItem("crefleai_token", "t");
+  const mock = vi.fn(async () => new Response("{}", { status: 500 }));
+  vi.stubGlobal("fetch", mock);
+
+  render(<ChatPage />);
+
+  await waitFor(() => expect(mock).toHaveBeenCalled());
+  expect(screen.queryByText(/컨텍스트 사용량/)).toBeNull();
+});
+
 it("think 블록을 접힌 추론 과정 영역으로 분리하고 본문을 마크다운으로 렌더링한다", async () => {
   localStorage.setItem("crefleai_token", "t");
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(sseResponse(delta("<think>먼저 생각한다</think>"), delta("**굵은** 답변"))),
-  );
+  stubFetch(sseResponse(delta("<think>먼저 생각한다</think>"), delta("**굵은** 답변")));
 
   await sendMessage("안녕");
 
@@ -92,7 +163,7 @@ it("think 블록을 접힌 추론 과정 영역으로 분리하고 본문을 마
 
 it("think가 없는 응답은 본문만 표시한다", async () => {
   localStorage.setItem("crefleai_token", "t");
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(sseResponse(delta("일반 답변"))));
+  stubFetch(sseResponse(delta("일반 답변")));
 
   await sendMessage("안녕");
 
@@ -112,7 +183,7 @@ it("스트림 에러 시 부분 수신 텍스트를 유지하고 오류를 표�
       else controller.error(new Error("연결 끊김"));
     },
   });
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream, { status: 200 })));
+  stubFetch(new Response(stream, { status: 200 }));
 
   await sendMessage("안녕");
 
