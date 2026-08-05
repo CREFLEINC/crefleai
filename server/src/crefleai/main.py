@@ -21,15 +21,27 @@ from crefleai.models.worker_manager import WorkerManager
 
 
 class SPAStaticFiles(StaticFiles):
-    """SPA 클라이언트 라우트 딥링크를 index.html로 폴백한다."""
+    """SPA 클라이언트 라우트 딥링크를 index.html로 폴백한다. API 네임스페이스는 JSON 404."""
 
     async def get_response(self, path: str, scope):
         try:
             return await super().get_response(path, scope)
         except StarletteHTTPException as e:
-            if e.status_code == 404:
-                return await super().get_response("index.html", scope)
-            raise
+            if e.status_code != 404:
+                raise
+            request_path: str = scope["path"]
+            if request_path.startswith(("/api/", "/v1/")) or request_path in ("/api", "/v1"):
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "error": {
+                            "message": "요청한 경로를 찾을 수 없습니다",
+                            "type": "invalid_request_error",
+                            "code": None,
+                        }
+                    },
+                )
+            return await super().get_response("index.html", scope)
 
 
 def _web_dist(settings: Settings) -> Path | None:

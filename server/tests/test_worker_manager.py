@@ -127,7 +127,6 @@ async def test_셧다운시_재스폰_대기를_조기_중단한다():
     assert loop.time() - start < 5
     assert wm.status == "stopped"
 
-
 async def test_동시_serve_호출은_직렬화된다():
     wm = WorkerManager(PORT, 2048, command_builder=fake_command, startup_timeout=15)
     results = await asyncio.gather(

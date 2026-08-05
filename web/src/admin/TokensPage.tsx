@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
+import { copyToClipboard } from "../clipboard";
 import type { CreatedToken, TokenInfo } from "../types";
 
 export default function TokensPage() {
@@ -7,6 +8,7 @@ export default function TokensPage() {
   const [userName, setUserName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [created, setCreated] = useState<CreatedToken | null>(null);
+  const [copyResult, setCopyResult] = useState<"ok" | "fail" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -26,6 +28,7 @@ export default function TokensPage() {
         body: JSON.stringify({ user_name: userName, purpose }),
       });
       setCreated(token);
+      setCopyResult(null);
       setUserName("");
       setPurpose("");
       await load();
@@ -65,10 +68,18 @@ export default function TokensPage() {
           <p>아래 토큰은 지금만 확인할 수 있습니다. 복사해서 사용자에게 전달하세요.</p>
           <code>{created.token}</code>
           <p>
-            <button onClick={() => navigator.clipboard.writeText(created.token)}>
+            <button
+              onClick={async () =>
+                setCopyResult((await copyToClipboard(created.token)) ? "ok" : "fail")
+              }
+            >
               복사
             </button>{" "}
-            <button onClick={() => setCreated(null)}>닫기</button>
+            <button onClick={() => setCreated(null)}>닫기</button>{" "}
+            {copyResult === "ok" && <span>복사됨</span>}
+            {copyResult === "fail" && (
+              <span role="alert">복사 실패 — 토큰을 드래그해 직접 복사하세요</span>
+            )}
           </p>
         </div>
       )}

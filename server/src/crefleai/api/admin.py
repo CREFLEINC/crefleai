@@ -43,6 +43,7 @@ def login(
     token = login_admin(db, settings.jwt_secret, body.username, body.password)
     if token is None:
         raise APIError(401, "아이디 또는 비밀번호가 올바르지 않습니다", "invalid_request_error")
+    # secure 미설정은 사내 HTTP 배포 전제 — TLS 도입 시 secure=True 필수
     response.set_cookie(
         ADMIN_COOKIE,
         token,
