@@ -5,6 +5,15 @@ import { splitSseEvents } from "../sse";
 import { splitThink } from "../think";
 import type { ChatMessage } from "../types";
 
+const DEFAULT_TEMPERATURE = 0.7;
+
+function loadTemperature(): number {
+  const saved = localStorage.getItem("crefleai_temperature");
+  if (!saved) return DEFAULT_TEMPERATURE;
+  const parsed = Number(saved);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_TEMPERATURE;
+}
+
 function AssistantContent({ content }: { content: string }) {
   const { think, answer, thinking } = splitThink(content);
   if (think === null && !answer) return <p>...</p>;
@@ -29,8 +38,8 @@ export default function ChatPage() {
   const [token, setToken] = useState(localStorage.getItem("crefleai_token") ?? "");
   // 최초 마운트 시에만 토큰 유무로 초기화 — 이후에는 사용자가 직접 접고 펼친다
   const [settingsOpen, setSettingsOpen] = useState(!token);
-  const [system, setSystem] = useState("");
-  const [temperature, setTemperature] = useState(0.7);
+  const [system, setSystem] = useState(localStorage.getItem("crefleai_system") ?? "");
+  const [temperature, setTemperature] = useState(loadTemperature);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
@@ -39,6 +48,16 @@ export default function ChatPage() {
   function saveToken(value: string) {
     setToken(value);
     localStorage.setItem("crefleai_token", value);
+  }
+
+  function saveSystem(value: string) {
+    setSystem(value);
+    localStorage.setItem("crefleai_system", value);
+  }
+
+  function saveTemperature(value: number) {
+    setTemperature(value);
+    localStorage.setItem("crefleai_temperature", String(value));
   }
 
   async function send(e: FormEvent) {
@@ -109,7 +128,7 @@ export default function ChatPage() {
         </label>
         <label>
           System 프롬프트
-          <textarea value={system} onChange={(e) => setSystem(e.target.value)} />
+          <textarea value={system} onChange={(e) => saveSystem(e.target.value)} />
         </label>
         <label>
           Temperature: {temperature}
@@ -119,7 +138,7 @@ export default function ChatPage() {
             max="2"
             step="0.1"
             value={temperature}
-            onChange={(e) => setTemperature(Number(e.target.value))}
+            onChange={(e) => saveTemperature(Number(e.target.value))}
           />
         </label>
       </details>

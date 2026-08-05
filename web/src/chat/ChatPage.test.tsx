@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import ChatPage from "./ChatPage";
@@ -40,6 +40,36 @@ it("저장된 토큰이 있으면 연결 설정이 접힌 상태로 시작한다
   render(<ChatPage />);
   const details = screen.getByText("연결 설정").closest("details")!;
   expect(details.open).toBe(false);
+});
+
+it("저장된 System 프롬프트와 Temperature를 복원한다", () => {
+  localStorage.setItem("crefleai_system", "너는 친절한 비서다");
+  localStorage.setItem("crefleai_temperature", "1.3");
+  render(<ChatPage />);
+  expect(screen.getByLabelText("System 프롬프트")).toHaveValue("너는 친절한 비서다");
+  expect(screen.getByLabelText(/Temperature/)).toHaveValue("1.3");
+});
+
+it("저장된 값이 없으면 기본값(빈 프롬프트, 0.7)으로 시작한다", () => {
+  render(<ChatPage />);
+  expect(screen.getByLabelText("System 프롬프트")).toHaveValue("");
+  expect(screen.getByLabelText(/Temperature/)).toHaveValue("0.7");
+});
+
+it("System 프롬프트·Temperature 변경 시 localStorage에 저장한다", async () => {
+  render(<ChatPage />);
+
+  await userEvent.type(screen.getByLabelText("System 프롬프트"), "간결하게 답하라");
+  fireEvent.change(screen.getByLabelText(/Temperature/), { target: { value: "0.3" } });
+
+  expect(localStorage.getItem("crefleai_system")).toBe("간결하게 답하라");
+  expect(localStorage.getItem("crefleai_temperature")).toBe("0.3");
+});
+
+it("저장된 Temperature가 숫자가 아니면 기본값 0.7로 동작한다", () => {
+  localStorage.setItem("crefleai_temperature", "잘못된값");
+  render(<ChatPage />);
+  expect(screen.getByLabelText(/Temperature/)).toHaveValue("0.7");
 });
 
 it("think 블록을 접힌 추론 과정 영역으로 분리하고 본문을 마크다운으로 렌더링한다", async () => {
