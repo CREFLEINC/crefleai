@@ -31,9 +31,10 @@ def make_fake_worker_app() -> FastAPI:
 
 
 class FakeWorkerManager:
-    def __init__(self, status="running", model_id="tiny"):
+    def __init__(self, status="running", model_id="tiny", context_length=4096):
         self.status = status
         self.model_id = model_id
+        self.context_length = context_length
         self.error = None
         self.base_url = "http://worker"
 
@@ -82,6 +83,11 @@ def test_models_목록(v1_client, user_token):
     res = v1_client.get("/v1/models", headers={"Authorization": f"Bearer {user_token}"})
     assert res.status_code == 200
     assert [m["id"] for m in res.json()["data"]] == ["tiny"]
+
+
+def test_models_목록에_context_length_포함(v1_client, user_token):
+    res = v1_client.get("/v1/models", headers={"Authorization": f"Bearer {user_token}"})
+    assert res.json()["data"][0]["context_length"] == 4096
 
 
 def test_비스트리밍_프록시(v1_client, user_token):
