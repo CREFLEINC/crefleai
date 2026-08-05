@@ -49,7 +49,13 @@ def create_app(model_path: str, model_id: str, n_ctx: int, llama_factory=None) -
         if body.get("stream"):
             return StreamingResponse(_stream(kwargs), media_type="text/event-stream")
         async with lock:
-            result = await asyncio.to_thread(_call_llama, kwargs)
+            try:
+                result = await asyncio.to_thread(_call_llama, kwargs)
+            except Exception as e:  # noqa: BLE001 — 스트리밍 경로와 동일한 OpenAI 오류 형식으로 전달
+                return JSONResponse(
+                    {"error": {"message": str(e), "type": "server_error", "code": None}},
+                    status_code=500,
+                )
         result["model"] = model_id
         return JSONResponse(result)
 
