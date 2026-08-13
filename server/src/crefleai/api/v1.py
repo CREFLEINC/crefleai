@@ -17,7 +17,13 @@ async def list_models(
 ):
     data = []
     if wm.status == "running" and wm.model_id:
-        data.append({"id": wm.model_id, "object": "model", "created": 0, "owned_by": "crefleai"})
+        data.append({
+            "id": wm.model_id,
+            "object": "model",
+            "created": 0,
+            "owned_by": "crefleai",
+            "context_length": wm.context_length,
+        })
     return {"object": "list", "data": data}
 
 
