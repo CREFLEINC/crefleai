@@ -182,12 +182,14 @@ it("think 블록을 접힌 추론 과정 영역으로 분리하고 본문을 마
   expect(screen.queryByText(/<think>/)).toBeNull();
 });
 
-it("Harmony 형식 응답도 접힌 추론 과정 영역으로 분리한다", async () => {
+it("Harmony 형식 응답의 추론 과정을 분리하고 종료 토큰을 숨긴다", async () => {
   localStorage.setItem("crefleai_token", "t");
   stubFetch(
     sseResponse(
       delta("<|channel|>analysis<|message|>먼저 분석"),
-      delta("<|end|><|start|>assistant<|channel|>final<|message|>최종 답변"),
+      delta(
+        "<|end|><|start|>assistant<|channel|>final<|message|>최종 답변<|return|>",
+      ),
     ),
   );
 
@@ -198,7 +200,7 @@ it("Harmony 형식 응답도 접힌 추론 과정 영역으로 분리한다", as
   expect(details.open).toBe(false);
   expect(details).toHaveTextContent("먼저 분석");
   expect(await screen.findByText("최종 답변")).toBeInTheDocument();
-  expect(screen.queryByText(/<\|channel\|>/)).toBeNull();
+  expect(screen.queryByText(/<\|(channel|return)\|>/)).toBeNull();
 });
 
 it("think가 없는 응답은 본문만 표시한다", async () => {
