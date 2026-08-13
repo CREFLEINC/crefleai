@@ -6,7 +6,9 @@ import { splitThink } from "../think";
 import type { ChatMessage } from "../types";
 
 const DEFAULT_TEMPERATURE = 0.7;
-const ESTIMATED_CHARS_PER_TOKEN = 3; // 한글 ~2자/토큰, 영문 ~4자/토큰 사이의 근사치
+// 한국어 실측 하한(약 2.03자/토큰)에 맞춘 보수적 근사치다.
+const ESTIMATED_CHARS_PER_TOKEN = 2;
+const ESTIMATED_TOKENS_PER_MESSAGE = 4;
 const CONTEXT_WARNING_RATIO = 0.8;
 
 // 마지막 응답의 usage 기준 실제 토큰 수. messageCount 시점의 대화까지만 유효하다.
@@ -17,7 +19,10 @@ interface ContextUsage {
 
 function estimateTokens(texts: string[]): number {
   const totalChars = texts.reduce((sum, text) => sum + text.length, 0);
-  return Math.ceil(totalChars / ESTIMATED_CHARS_PER_TOKEN);
+  return (
+    Math.ceil(totalChars / ESTIMATED_CHARS_PER_TOKEN) +
+    texts.length * ESTIMATED_TOKENS_PER_MESSAGE
+  );
 }
 
 function loadTemperature(): number {
@@ -159,7 +164,10 @@ export default function ChatPage() {
   const usedTokens =
     usage && usage.messageCount === messages.length
       ? usage.tokens
-      : estimateTokens([system, ...messages.map((m) => m.content)]);
+      : estimateTokens([
+          ...(system ? [system] : []),
+          ...messages.map((message) => message.content),
+        ]);
   const usageRatio = contextLength ? usedTokens / contextLength : 0;
 
   return (

@@ -102,16 +102,37 @@ it("대화가 쌓이면 문자 수 근사치로 사용량이 늘어난다", asyn
   localStorage.setItem("crefleai_token", "t");
   stubFetch(sseResponse(delta("답")), 100);
 
-  await sendMessage("안녕하세요"); // user 5자 + assistant 1자 = 6자 → ceil(6/3) = 2토큰
+  await sendMessage("안녕하세요");
 
-  expect(await screen.findByText(/컨텍스트 사용량 약 2 \/ 100 \(2%\)/)).toBeInTheDocument();
+  // 본문 ceil(6자 / 2) + 메시지 템플릿 2개 * 4토큰 = 11토큰
+  expect(
+    await screen.findByText(/컨텍스트 사용량 약 11 \/ 100 \(11%\)/),
+  ).toBeInTheDocument();
+});
+
+it("한국어 대화는 실측 토큰 수보다 적게 추정하지 않는다", async () => {
+  localStorage.setItem("crefleai_token", "t");
+  stubFetch(sseResponse(delta("")), 100);
+
+  // o200k_base 실측: 59자, 29토큰
+  await sendMessage(
+    "안녕하세요. 오늘 회의에서 논의된 내용을 정리해서 알려주세요. 특히 예산 관련 항목은 자세히 부탁드립니다.",
+  );
+
+  await waitFor(() => {
+    const text = screen.getByText(/컨텍스트 사용량/).textContent ?? "";
+    const estimated = Number(
+      text.match(/약 ([\d,]+)/)?.[1].replaceAll(",", ""),
+    );
+    expect(estimated).toBeGreaterThanOrEqual(29);
+  });
 });
 
 it("사용량이 80% 이상이면 경고 스타일을 적용한다", async () => {
   localStorage.setItem("crefleai_token", "t");
   stubFetch(sseResponse(delta("답변")), 10);
 
-  await sendMessage("a".repeat(22)); // 22자 + 2자 = 24자 → 8토큰 = 80%
+  await sendMessage("a".repeat(22));
 
   const usage = await screen.findByText(/컨텍스트 사용량/);
   expect(usage).toHaveClass("warning");
