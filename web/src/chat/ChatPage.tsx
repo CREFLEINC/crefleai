@@ -32,8 +32,14 @@ function loadTemperature(): number {
   return Number.isFinite(parsed) ? parsed : DEFAULT_TEMPERATURE;
 }
 
-function AssistantContent({ content }: { content: string }) {
-  const { think, answer, thinking } = splitThink(content);
+function AssistantContent({
+  content,
+  streaming,
+}: {
+  content: string;
+  streaming: boolean;
+}) {
+  const { think, answer, thinking } = splitThink(content, streaming);
   if (think === null && !answer) return <p>...</p>;
   return (
     <>
@@ -205,7 +211,10 @@ export default function ChatPage() {
           <li key={i} className={m.role}>
             <strong>{m.role === "user" ? "나" : "모델"}</strong>
             {m.role === "assistant" ? (
-              <AssistantContent content={m.content} />
+              <AssistantContent
+                content={m.content}
+                streaming={busy && i === messages.length - 1}
+              />
             ) : (
               <p>{m.content || "..."}</p>
             )}
