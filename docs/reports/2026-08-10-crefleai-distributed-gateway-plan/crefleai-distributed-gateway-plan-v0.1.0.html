@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>CrefleAI 분산 추론 Gateway 구축 계획</title>
+
+<link rel="stylesheet" href="./crefle-doc/crefle-doc.css">
+
+<style>
+  :root {
+    --doc-running-title: 'CrefleAI 분산 추론 Gateway 구축 계획';
+  }
+</style>
+</head>
+
+<body class="doc doc-numbered">
+
+<header class="doc-cover">
+  <p class="eyebrow">CREFLE · 기술 계획 보고서</p>
+  <h1>CrefleAI 분산 추론 Gateway 구축 계획</h1>
+  <p class="lede">기존 FastAPI 자산을 Gateway로 발전시키고, 모델별 GPU 서버를 독립 운영하기 위한 단계적 전환 계획</p>
+
+  <table data-document-info>
+    <caption>문서 정보</caption>
+    <tbody>
+      <tr><th>작성자</th><td>CTO 김정규</td></tr>
+      <tr><th>작성일</th><td>2026-08-10</td></tr>
+      <tr><th>작성시간</th><td>17:34 KST</td></tr>
+      <tr><th>문서 버전</th><td>0.1.0</td></tr>
+      <tr><th>열람 대상</th><td>프로젝트 관련자</td></tr>
+    </tbody>
+  </table>
+</header>
+
+<h2>요약</h2>
+
+<p>
+  CrefleAI는 <strong>공통 Gateway와 모델별 독립 추론 서버</strong> 구조로 전환한다.
+  새로운 Gateway 제품을 먼저 도입하지 않고, 현재 FastAPI 애플리케이션의 인증·OpenAI 호환 API·관리 기능을 유지하면서
+  로컬 단일 워커 결합을 네트워크 기반 <code>ModelRegistry</code>와 <code>InferenceRouter</code>로 교체한다.
+</p>
+
+<div class="kpi">
+  <div><span class="big">1</span><span class="lbl">클라이언트 통합<br>API 진입점</span></div>
+  <div><span class="big">2</span><span class="lbl">Gateway·추론 서버<br>독립 배포 단위</span></div>
+  <div><span class="big">0</span><span class="lbl">서로 다른 모델로의<br>묵시적 fallback</span></div>
+</div>
+
+<div class="callout callout-success">
+  <p><strong>결정.</strong> Gateway v1은 기존 Python·FastAPI 스택으로 구현한다. 모델 서버는 OpenAI 호환 내부 API를 제공하는 독립 컨테이너로 배포하며, 초기 라우팅 정보는 정적 설정으로 관리한다.</p>
+</div>
+
+<p>
+  첫 번째 완료 지점은 <strong>기존 클라이언트 변경 없이 Gateway가 서로 다른 물리 서버의 두 모델 워커로
+  <code>model</code> 값에 따라 일반 응답과 SSE 스트리밍 요청을 전달하는 것</strong>이다.
+  원격 모델 다운로드와 프로세스 제어 자동화는 이 경로가 안정화된 뒤 별도 제어 계층으로 확장한다.
+</p>
+
+<h2>배경</h2>
+
+<p>
+  현재 CrefleAI는 사내 GPU 서버에서 GGUF 모델을 제공하는 단일 서버형 서비스다.
+  FastAPI 프로세스가 외부 API, JWT 인증, 관리자 화면, 모델 카탈로그를 제공하고,
+  같은 호스트의 추론 워커 서브프로세스를 직접 생성하고 감시한다.<a class="fn-ref" href="#fn1">1</a>
+</p>
+
+<h3>현재 구조의 제약</h3>
+
+<ul>
+  <li><code>/v1/chat/completions</code>가 하나의 <code>WorkerManager</code> 상태와 <code>base_url</code>에 직접 결합돼 있다.</li>
+  <li><code>WorkerManager</code>는 <code>127.0.0.1</code>의 워커 한 개만 생성·감시한다.</li>
+  <li>Gateway와 워커가 하나의 컨테이너 이미지와 배포 주기를 공유하며, 컨테이너에 모든 GPU가 전달된다.</li>
+  <li>토큰 allowlist와 설정이 로컬 SQLite에 있어 Gateway를 여러 인스턴스로 늘리면 상태 동기화가 되지 않는다.</li>
+  <li>동시 서비스 모델 한 개와 요청 한 개씩 처리하는 정책으로 설계돼 있어 모델별 독립 확장과 임베딩 워크로드 수용이 어렵다.</li>
+</ul>
+
+<div class="callout">
+  <p><strong>활용할 자산.</strong> OpenAI 호환 API, JWT 토큰 관리, 관리자 UI, 모델 카탈로그, SSE 중계, 워커 헬스체크와 재시작 로직은 유지하거나 역할을 분리해 재사용한다.</p>
+</div>
+
+<h2>목표와 범위</h2>
+
+<h3>목표</h3>
+
+<ol>
+  <li>사용자는 하나의 CrefleAI API 주소로 모든 허용 모델을 호출한다.</li>
+  <li>각 모델은 지정된 GPU 서버에서 독립적으로 배포·재시작·확장된다.</li>
+  <li>Gateway는 요청의 모델과 기능을 검증하고 정상 endpoint로 전달한다.</li>
+  <li>모델별 장애와 과부하가 다른 모델 및 Gateway 관리 기능으로 전파되지 않는다.</li>
+  <li>추론 엔진을 바꿔도 외부 클라이언트 계약은 유지된다.</li>
+</ol>
+
+<h3>Gateway v1 범위</h3>
+
+<table>
+  <caption>Gateway v1 범위</caption>
+  <thead>
+    <tr><th>포함</th><th>후속 범위</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>모델 ID 기반 라우팅</td><td>요청 내용 기반 지능형 모델 선택</td></tr>
+    <tr><td>Chat Completions·Embeddings API</td><td>이미지·음성·멀티모달 API</td></tr>
+    <tr><td>정적 endpoint 등록과 readiness 확인</td><td>동적 서비스 디스커버리</td></tr>
+    <tr><td>같은 모델 복제본 사이의 부하 분산</td><td>KV-cache·prefix-aware 스케줄링</td></tr>
+    <tr><td>수동 Worker 배포</td><td>원격 모델 다운로드·배포 제어 계층</td></tr>
+    <tr><td>모델별 동시성 제한과 관측 지표</td><td>조직별 토큰 예산·비용 정산</td></tr>
+  </tbody>
+</table>
+
+<h2>목표 아키텍처</h2>
+
+<pre><code>Client
+  │
+  │ HTTPS · OpenAI compatible API
+  ▼
+Edge Proxy / Load Balancer
+  │
+  ▼
+CrefleAI Gateway
+  ├─ Authentication / Token allowlist
+  ├─ ModelRegistry
+  ├─ InferenceRouter
+  ├─ Concurrency / Rate policy
+  └─ Metrics / Trace
+  │
+  │ private network · internal credential
+  ├───────────────┬────────────────┬────────────────┐
+  ▼               ▼                ▼                ▼
+GPU Server A    GPU Server B     GPU Server C     Future replicas
+Chat Worker     Code Worker      Embedding Worker same model pool
+LLM Engine      LLM Engine       Embedding Engine
+</code></pre>
+
+<h3>서비스 경계</h3>
+
+<table>
+  <caption>컴포넌트별 책임</caption>
+  <thead>
+    <tr><th>컴포넌트</th><th>책임</th><th>가지지 않는 책임</th></tr>
+  </thead>
+  <tbody>
+    <tr><th>Edge Proxy</th><td>TLS 종료, Gateway 인스턴스 부하 분산</td><td>모델 선택, 토큰 정책</td></tr>
+    <tr><th>CrefleAI Gateway</th><td>인증, API 검증, 모델 라우팅, 사용량 기록</td><td>GPU 접근, 모델 프로세스 직접 생성</td></tr>
+    <tr><th>Inference Worker</th><td>모델 로드, 추론, 스트리밍, 로컬 GPU 상태</td><td>사용자 인증, 공용 인터넷 노출</td></tr>
+    <tr><th>Control Plane</th><td>향후 모델 다운로드, 배포, 버전 전환</td><td>실시간 추론 트래픽 중계</td></tr>
+  </tbody>
+</table>
+
+<h2>Gateway v1 기술 스택</h2>
+
+<table>
+  <caption>기술 선택과 근거</caption>
+  <thead>
+    <tr><th>영역</th><th>선택</th><th>근거</th></tr>
+  </thead>
+  <tbody>
+    <tr><th>Gateway 애플리케이션</th><td>Python 3.11+ · FastAPI · Uvicorn</td><td>기존 API·인증·관리 기능과 테스트를 재사용한다.</td></tr>
+    <tr><th>업스트림 통신</th><td>HTTP/1.1 또는 HTTP/2 · httpx</td><td>현재 비동기 SSE 중계 경로를 확장할 수 있다.</td></tr>
+    <tr><th>외부 API</th><td>OpenAI 호환</td><td>클라이언트 SDK와 기존 애플리케이션 변경을 최소화한다.</td></tr>
+    <tr><th>모델 레지스트리</th><td>초기 YAML · 이후 PostgreSQL</td><td>초기 운영을 단순화하고 검증 뒤 동적 관리로 확장한다.</td></tr>
+    <tr><th>영속 상태</th><td>PostgreSQL</td><td>Gateway 이중화 시 토큰 allowlist와 설정을 일관되게 공유한다.</td></tr>
+    <tr><th>공유 런타임 상태</th><td>초기 인프로세스 · 필요 시 Redis</td><td>분산 rate limit과 endpoint 상태 공유가 필요해질 때 도입한다.</td></tr>
+    <tr><th>관측</th><td>Prometheus · OpenTelemetry · Grafana</td><td>모델별 지연, 대기열, 오류, GPU 지표를 연결해 본다.</td></tr>
+    <tr><th>배포</th><td>Gateway·Worker 분리 Docker Compose</td><td>현재 운영 방식과 팀 경험을 유지하면서 물리 서버를 분리한다.</td></tr>
+  </tbody>
+</table>
+
+<p>
+  Envoy AI Gateway와 KServe는 토큰 기반 제한, 고급 라우팅, 다중 노드 추론이 필요한 시점의 재검토 후보로 둔다.
+  현재 단계에서는 Kubernetes 선행 구성과 운영 복잡도가 첫 수직 경로 검증보다 크다.<a class="fn-ref" href="#fn2">2</a>
+  외부 상용 모델 공급자까지 하나의 정책으로 통합할 필요가 생기면 LiteLLM도 대안으로 재평가한다.<a class="fn-ref" href="#fn3">3</a>
+</p>
+
+<h2>API 및 라우팅 계약</h2>
+
+<h3>외부 API</h3>
+
+<table>
+  <caption>외부 API 계약</caption>
+  <thead>
+    <tr><th>Endpoint</th><th>기능</th><th>주요 정책</th></tr>
+  </thead>
+  <tbody>
+    <tr><th><code>GET /v1/models</code></th><td>호출 가능한 모델과 기능 조회</td><td>준비 상태와 권한을 반영한다.</td></tr>
+    <tr><th><code>POST /v1/chat/completions</code></th><td>일반·SSE 채팅 완성</td><td><code>chat</code> 기능 모델만 허용한다.</td></tr>
+    <tr><th><code>POST /v1/embeddings</code></th><td>텍스트 임베딩</td><td><code>embeddings</code> 기능 모델만 허용한다.</td></tr>
+  </tbody>
+</table>
+
+<h3>Worker 내부 API</h3>
+
+<ul>
+  <li><code>GET /health/live</code>: 프로세스 생존 여부</li>
+  <li><code>GET /health/ready</code>: 모델 로드 완료와 요청 수락 가능 여부</li>
+  <li><code>GET /metrics</code>: 요청·대기열·추론 지표</li>
+  <li><code>POST /v1/chat/completions</code> 또는 <code>POST /v1/embeddings</code>: Worker 기능별 표준 추론 API</li>
+</ul>
+
+<h3>라우팅 원칙</h3>
+
+<ol>
+  <li>외부 <code>model</code> ID는 실제 파일명과 분리한 안정적인 alias로 관리한다.</li>
+  <li>복수 모델 환경에서는 <code>model</code>을 필수로 하거나 명시적인 기본 alias만 허용한다.</li>
+  <li>같은 model ID의 준비된 복제본 사이에서만 부하를 분산한다.</li>
+  <li>다른 모델로의 fallback은 자동 적용하지 않으며, 별도 정책이 승인된 경우에만 노출한다.</li>
+  <li>endpoint별 최대 동시성을 초과하면 제한된 대기 후 <code>429</code> 또는 <code>503</code>을 반환한다.</li>
+</ol>
+
+<pre><code>models:
+  chat-general:
+    capability: chat
+    endpoints:
+      - url: http://gpu-a.internal:8001
+        max_concurrency: 2
+
+  embedding-ko:
+    capability: embeddings
+    endpoints:
+      - url: http://gpu-c.internal:8001
+        max_concurrency: 16
+</code></pre>
+
+<h2>장애 및 보안 정책</h2>
+
+<h3>오류 처리</h3>
+
+<table>
+  <caption>요청 단계별 처리 원칙</caption>
+  <thead>
+    <tr><th>상황</th><th>처리</th><th>이유</th></tr>
+  </thead>
+  <tbody>
+    <tr><th>연결 전 실패</th><td>같은 모델의 다른 복제본으로 최대 1회 재시도</td><td>중복 추론 비용과 지연 폭증을 제한한다.</td></tr>
+    <tr><th>첫 응답 전 timeout</th><td>요청을 취소하고 명시적 오류 반환</td><td>무한 대기와 대기열 적체를 방지한다.</td></tr>
+    <tr><th>스트리밍 시작 후 중단</th><td>자동 재시도하지 않고 오류 이벤트로 종료</td><td>응답 중복과 문맥 불일치를 방지한다.</td></tr>
+    <tr><th>Worker readiness 실패</th><td>라우팅 대상에서 제외하고 주기적으로 재확인</td><td>장애 endpoint로의 반복 전송을 막는다.</td></tr>
+    <tr><th>클라이언트 연결 종료</th><td>업스트림 요청 취소 전파</td><td>불필요한 GPU 연산을 줄인다.</td></tr>
+  </tbody>
+</table>
+
+<h3>네트워크와 자격 증명</h3>
+
+<ul>
+  <li>외부에는 Gateway 또는 Edge Proxy만 노출한다.</li>
+  <li>Worker 포트는 사설망에서 Gateway 주소만 접근하도록 방화벽을 제한한다.</li>
+  <li>초기에는 Worker 전용 내부 토큰을 사용하고 비밀값은 이미지와 저장소에 포함하지 않는다.</li>
+  <li>보안 구역이 나뉘거나 다중 조직이 접근하면 Gateway와 Worker 사이에 mTLS를 적용한다.</li>
+  <li>프롬프트와 생성 본문은 기본 로그에서 제외하고 request ID, 모델, 토큰 수, 지연만 기록한다.</li>
+</ul>
+
+<h2>실행 계획</h2>
+
+<table>
+  <caption>단계별 실행 계획</caption>
+  <thead>
+    <tr><th>단계</th><th>핵심 작업</th><th>산출물</th><th>완료 기준</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0. 계약 확정</th>
+      <td>모델 배치표, public model ID, 기능, 동시성, API 오류 계약 정의</td>
+      <td>아키텍처 결정 기록과 라우팅 설정 스키마</td>
+      <td>최소 두 모델과 담당 서버가 명시된다.</td>
+    </tr>
+    <tr>
+      <th>1. Worker 분리</th>
+      <td>Gateway와 Worker 이미지 분리, 원격 Worker 독립 실행, 내부 인증</td>
+      <td>GPU 서버별 Compose와 Worker health API</td>
+      <td>Gateway 없이 각 Worker의 추론과 스트리밍을 검증한다.</td>
+    </tr>
+    <tr>
+      <th>2. 분산 라우팅</th>
+      <td><code>ModelRegistry</code>, <code>InferenceRouter</code>, Chat·Embedding adapter 구현</td>
+      <td>모델별 라우팅과 통합 <code>/v1/models</code></td>
+      <td>기존 클라이언트가 두 원격 모델을 선택 호출한다.</td>
+    </tr>
+    <tr>
+      <th>3. 신뢰성</th>
+      <td>readiness, 동시성 제한, timeout, circuit breaker, 취소 전파</td>
+      <td>오류 정책 테스트와 장애 시나리오 결과</td>
+      <td>한 Worker 장애가 다른 모델 요청에 영향을 주지 않는다.</td>
+    </tr>
+    <tr>
+      <th>4. 관측·부하 검증</th>
+      <td>Gateway·Worker·GPU 지표 연결, 스트리밍 부하 시험</td>
+      <td>대시보드와 모델별 기준 성능표</td>
+      <td>목표 부하에서 병목과 용량 계획 근거가 확인된다.</td>
+    </tr>
+    <tr>
+      <th>5. 운영 이중화</th>
+      <td>PostgreSQL 전환, Gateway 복제, Edge 부하 분산</td>
+      <td>Gateway 다중 인스턴스 배포와 복구 절차</td>
+      <td>Gateway 한 인스턴스 중단 중에도 신규 요청을 처리한다.</td>
+    </tr>
+    <tr>
+      <th>6. 제어 계층</th>
+      <td>원격 모델 다운로드, 배포, 버전 전환, Node Agent 또는 오케스트레이터 검토</td>
+      <td>분산 모델 운영 UI와 감사 기록</td>
+      <td>추론 데이터 경로와 독립적으로 모델 생명주기를 관리한다.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>첫 번째 개발 마일스톤</h3>
+
+<blockquote>
+  기존 OpenAI 클라이언트를 변경하지 않고, CrefleAI Gateway가 서로 다른 물리 서버에서 실행되는 두 모델 Worker로
+  <code>model</code> 값에 따라 비스트리밍과 SSE 스트리밍 요청을 정확히 전달한다.
+</blockquote>
+
+<p>첫 마일스톤의 필수 검증 항목은 다음과 같다.</p>
+
+<ul>
+  <li>정상 모델별 요청과 <code>/v1/models</code> 응답</li>
+  <li>없는 모델, 기능 불일치, 준비되지 않은 모델의 오류 형식</li>
+  <li>SSE chunk와 <code>[DONE]</code>의 무변형 중계</li>
+  <li>Worker 연결 실패와 스트리밍 중단 처리</li>
+  <li>Gateway 종료 시 업스트림 연결 정리</li>
+  <li>Worker가 외부 네트워크에서 직접 접근되지 않음</li>
+</ul>
+
+<h2>관측 및 용량 계획</h2>
+
+<table>
+  <caption>필수 운영 지표</caption>
+  <thead>
+    <tr><th>영역</th><th>지표</th><th>용도</th></tr>
+  </thead>
+  <tbody>
+    <tr><th>Gateway</th><td>모델별 요청 수, 오류율, 활성 연결, 대기 요청</td><td>트래픽과 장애 영향 범위 확인</td></tr>
+    <tr><th>LLM</th><td>TTFT, 출력 tokens/s, 입력·출력 토큰, 종료 사유</td><td>사용자 체감 지연과 생성 처리량 확인</td></tr>
+    <tr><th>Embedding</th><td>입력 수, batch 크기, vectors/s, p95 지연</td><td>배치 효율과 별도 확장 시점 판단</td></tr>
+    <tr><th>Worker</th><td>readiness, queue depth, 활성 요청, 재시작 횟수</td><td>과부하와 크래시 루프 식별</td></tr>
+    <tr><th>GPU</th><td>VRAM, utilization, 온도, 전력, throttling</td><td>모델 배치와 하드웨어 용량 계획</td></tr>
+  </tbody>
+</table>
+
+<p>
+  모델별 최대 동시성은 사전 추정만으로 확정하지 않는다. 실제 평균 입력 길이, 출력 길이,
+  스트리밍 비율을 반영한 부하 시험 결과로 설정하고, 처리량보다 p95 지연과 대기열 증가를 함께 판단한다.
+</p>
+
+<h2>위험과 대응</h2>
+
+<table>
+  <caption>주요 위험과 대응 방안</caption>
+  <thead>
+    <tr><th>위험</th><th>영향</th><th>대응</th></tr>
+  </thead>
+  <tbody>
+    <tr><th>Gateway 단일 장애점</th><td>모든 모델 신규 요청 중단</td><td>PostgreSQL 전환 후 Gateway 복제와 Edge 부하 분산</td></tr>
+    <tr><th>SQLite 상태 분리</th><td>토큰 폐기와 설정 불일치</td><td>다중 Gateway 운영 전 PostgreSQL을 필수 조건으로 지정</td></tr>
+    <tr><th>스트리밍 재시도</th><td>중복 응답, 추가 GPU 비용</td><td>첫 chunk 이후 재시도 금지</td></tr>
+    <tr><th>모델별 처리 특성 차이</th><td>LLM과 임베딩의 상호 간섭</td><td>Worker·GPU·동시성 정책을 기능별로 분리</td></tr>
+    <tr><th>원격 관리 범위 과대</th><td>첫 배포 지연과 권한 위험</td><td>v1에서는 Worker를 수동 배포하고 제어 계층을 후속 분리</td></tr>
+    <tr><th>고급 플랫폼 조기 도입</th><td>운영 복잡도와 학습 비용 증가</td><td>부하·노드 수·자동화 요구가 확인될 때 KServe·Envoy를 재검토</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-warning">
+  <p><strong>한계.</strong> 이 문서는 모델별 실제 서버 주소, GPU 사양, 목표 동시 사용자 수, SLA와 성능 기준값을 확정하지 않는다. 단계 0에서 운영 데이터를 수집해 별도 배치표와 부하 시험 기준으로 승인해야 한다.</p>
+</div>
+
+<h2>재검토 조건</h2>
+
+<p>다음 조건이 발생하면 Gateway 또는 오케스트레이션 기술 선택을 다시 평가한다.</p>
+
+<ul>
+  <li>동일 모델 복제본 수가 늘어 단순 round-robin으로 GPU 사용률과 대기열을 균형화하기 어려운 경우</li>
+  <li>다중 노드 tensor·expert parallelism 또는 prefill/decode 분리가 필요한 경우</li>
+  <li>노드 추가·교체가 빈번해 정적 endpoint 등록이 운영 병목이 되는 경우</li>
+  <li>사용자·조직별 토큰 예산, 공급자별 비용, 외부 API fallback을 통합 관리해야 하는 경우</li>
+  <li>Gateway와 Worker의 수가 증가해 Compose 기반 배포·복구가 반복 작업의 주된 원인이 되는 경우</li>
+</ul>
+
+<h2>결론</h2>
+
+<p>
+  CrefleAI의 분산 전환은 새 Gateway 제품 도입보다 <strong>현재 FastAPI Gateway와 로컬 Worker의 결합을 분리하는 것</strong>에서 시작한다.
+  먼저 Worker를 독립 컨테이너와 표준 내부 API로 만들고, 정적 <code>ModelRegistry</code>와
+  <code>InferenceRouter</code>로 두 원격 모델을 연결한다. 이후 장애 정책, 관측, PostgreSQL 기반 Gateway 이중화,
+  원격 모델 제어 계층의 순서로 확장한다.
+</p>
+
+<p>
+  이 접근은 기존 CrefleAI의 인증·관리·클라이언트 호환성을 보존하면서 모델별 장애 격리와 수평 확장의 기반을 제공한다.
+  첫 마일스톤 완료 전에는 고급 Kubernetes 추론 플랫폼이나 동적 제어 계층을 필수 의존성으로 추가하지 않는다.
+</p>
+
+<h2>다음 단계</h2>
+
+<ol>
+  <li>실제 모델·서버·GPU·목표 동시성을 담은 모델 배치표를 확정한다.</li>
+  <li>Gateway v1 API와 정적 모델 레지스트리 스키마를 설계 문서로 고정한다.</li>
+  <li>현재 이미지에서 Worker를 분리하고 첫 번째 원격 GPU 서버에 독립 배포한다.</li>
+  <li><code>WorkerManager</code> 직접 의존을 <code>InferenceRouter</code> 인터페이스로 교체한다.</li>
+  <li>두 개 원격 모델의 비스트리밍·SSE 수직 경로를 자동 테스트한다.</li>
+</ol>
+
+<h2>개정 이력</h2>
+
+<table>
+  <caption>개정 이력</caption>
+  <thead>
+    <tr><th>버전</th><th>날짜</th><th>변경</th><th>작성자</th></tr>
+  </thead>
+  <tbody>
+    <tr><th>0.1.0</th><td>2026-08-10</td><td>최초 작성</td><td>CTO 김정규</td></tr>
+  </tbody>
+</table>
+
+<section class="footnotes">
+  <ol>
+    <li id="fn1">현재 구조 근거: <code>docs/superpowers/specs/2026-08-03-crefleai-llm-server-design.md</code>, <code>server/src/crefleai/main.py</code>, <code>server/src/crefleai/api/v1.py</code>, <code>server/src/crefleai/models/worker_manager.py</code>.</li>
+    <li id="fn2">후속 플랫폼 참고: <a href="https://aigateway.envoyproxy.io/docs/capabilities/">Envoy AI Gateway Capabilities</a>; <a href="https://kserve.github.io/website/docs/install/llmisvc-install">KServe LLMInferenceService Installation</a>.</li>
+    <li id="fn3">외부 공급자 통합 후보 참고: <a href="https://docs.litellm.ai/">LiteLLM Documentation</a>.</li>
+  </ol>
+</section>
+
+<script src="./crefle-doc/crefle-chart.js"></script>
+</body>
+</html>
