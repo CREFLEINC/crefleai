@@ -42,20 +42,28 @@ async def chat_completions(
         raise APIError(404, f"모델을 찾을 수 없습니다: {requested}", "invalid_request_error")
 
     url = f"{wm.base_url}/completion"
+    metrics = request.app.state.request_metrics
+    metrics.record_started()
     if body.get("stream"):
         async def relay():
+            success = False
             try:
                 async with client.stream("POST", url, json=body) as response:
                     async for chunk in response.aiter_raw():
                         yield chunk
+                success = True
             except httpx.TransportError:
                 payload = {"error": {"message": "추론 워커에 연결할 수 없습니다", "type": "server_error"}}
                 yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+            finally:
+                metrics.record_finished(success=success)
 
         return StreamingResponse(relay(), media_type="text/event-stream")
 
     try:
         response = await client.post(url, json=body)
     except httpx.TransportError as e:
+        metrics.record_finished(success=False)
         raise APIError(502, "추론 워커에 연결할 수 없습니다", "server_error") from e
+    metrics.record_finished(success=response.status_code < 400)
     return JSONResponse(response.json(), status_code=response.status_code)

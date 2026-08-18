@@ -26,3 +26,23 @@ it("로그아웃 API가 실패해도 로그인 화면으로 이동한다", async
 
   expect(await screen.findByText("로그인 화면")).toBeInTheDocument();
 });
+
+it("모니터링 메뉴를 제공한다", () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 })),
+  );
+
+  render(
+    <MemoryRouter initialEntries={["/admin"]}>
+      <Routes>
+        <Route path="/admin" element={<AdminLayout />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  expect(screen.getByRole("link", { name: "모니터링" })).toHaveAttribute(
+    "href",
+    "/admin/monitoring",
+  );
+});

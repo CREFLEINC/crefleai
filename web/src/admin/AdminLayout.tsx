@@ -19,6 +19,7 @@ export default function AdminLayout() {
       <header>
         <strong>CrefleAI 관리자</strong>
         <nav>
+          <NavLink to="/admin/monitoring">모니터링</NavLink>
           <NavLink to="/admin/models">모델 관리</NavLink>
           <NavLink to="/admin/tokens">토큰 관리</NavLink>
           <NavLink to="/chat">Chat 테스트</NavLink>

@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import AdminLayout from "./admin/AdminLayout";
 import LoginPage from "./admin/LoginPage";
+import MonitoringPage from "./admin/MonitoringPage";
 import ModelsPage from "./admin/ModelsPage";
 import RequireAdmin from "./admin/RequireAdmin";
 import TokensPage from "./admin/TokensPage";
@@ -20,6 +21,7 @@ export default function App() {
           }
         >
           <Route index element={<Navigate to="models" replace />} />
+          <Route path="monitoring" element={<MonitoringPage />} />
           <Route path="models" element={<ModelsPage />} />
           <Route path="tokens" element={<TokensPage />} />
         </Route>
