@@ -6,6 +6,8 @@ import { splitThink } from "../think";
 import type { ChatMessage } from "../types";
 
 const DEFAULT_TEMPERATURE = 0.7;
+const TEMPERATURE_MIN = 0;
+const TEMPERATURE_MAX = 2;
 // 한국어 실측 하한(약 2.03자/토큰)에 맞춘 보수적 근사치다.
 const ESTIMATED_CHARS_PER_TOKEN = 2;
 const ESTIMATED_TOKENS_PER_MESSAGE = 4;
@@ -30,7 +32,10 @@ function loadTemperature(): number {
   const saved = localStorage.getItem("crefleai_temperature");
   if (!saved) return DEFAULT_TEMPERATURE;
   const parsed = Number(saved);
-  return Number.isFinite(parsed) ? parsed : DEFAULT_TEMPERATURE;
+  if (!Number.isFinite(parsed) || parsed < TEMPERATURE_MIN || parsed > TEMPERATURE_MAX) {
+    return DEFAULT_TEMPERATURE;
+  }
+  return parsed;
 }
 
 function AssistantContent({
@@ -64,7 +69,7 @@ export default function ChatPage() {
   const [modelLookupToken, setModelLookupToken] = useState(token);
   // 최초 마운트 시에만 토큰 유무로 초기화 — 이후에는 사용자가 직접 접고 펼친다
   const [settingsOpen, setSettingsOpen] = useState(!token);
-  const [system, setSystem] = useState(localStorage.getItem("crefleai_system") ?? "");
+  const [system, setSystem] = useState(() => localStorage.getItem("crefleai_system") ?? "");
   const [temperature, setTemperature] = useState(loadTemperature);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -217,8 +222,8 @@ export default function ChatPage() {
           Temperature: {temperature}
           <input
             type="range"
-            min="0"
-            max="2"
+            min={TEMPERATURE_MIN}
+            max={TEMPERATURE_MAX}
             step="0.1"
             value={temperature}
             onChange={(e) => saveTemperature(Number(e.target.value))}
