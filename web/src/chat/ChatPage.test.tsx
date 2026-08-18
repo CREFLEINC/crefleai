@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import ChatPage from "./ChatPage";
 
 function delta(content: string) {
@@ -35,6 +35,11 @@ function stubFetch(completion?: Response, contextLength: number | null = null) {
   vi.stubGlobal("fetch", mock);
   return mock;
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 async function sendMessage(text: string) {
   render(<ChatPage />);
@@ -98,6 +103,26 @@ it("모델의 컨텍스트 윈도우 크기와 현재 사용량을 표시한다"
   expect(usage).not.toHaveClass("warning");
 });
 
+it("토큰을 입력하는 동안 컨텍스트 크기 조회를 디바운스한다", async () => {
+  vi.useFakeTimers();
+  const mock = stubFetch(undefined, 100);
+
+  render(<ChatPage />);
+  fireEvent.change(screen.getByLabelText("API 토큰"), { target: { value: "token" } });
+
+  expect(mock).not.toHaveBeenCalled();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(299);
+  });
+  expect(mock).not.toHaveBeenCalled();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+  });
+
+  expect(mock).toHaveBeenCalledTimes(1);
+  expect(mock.mock.calls[0][0]).toBe("/v1/models");
+});
+
 it("대화가 쌓이면 문자 수 근사치로 사용량이 늘어난다", async () => {
   localStorage.setItem("crefleai_token", "t");
   stubFetch(sseResponse(delta("답")), 100);
@@ -154,6 +179,46 @@ it("스트림에 usage가 포함되면 실제 토큰 수를 우선 사용한다"
   await sendMessage("안녕");
 
   expect(await screen.findByText(/컨텍스트 사용량 약 60 \/ 100 \(60%\)/)).toBeInTheDocument();
+});
+
+it("System 프롬프트 변경 시 이전 실제 usage를 무효화한다", async () => {
+  localStorage.setItem("crefleai_token", "t");
+  stubFetch(
+    sseResponse(
+      delta("답"),
+      JSON.stringify({
+        choices: [{ delta: {} }],
+        usage: { prompt_tokens: 50, completion_tokens: 10 },
+      }),
+    ),
+    100,
+  );
+
+  await sendMessage("안녕");
+  expect(await screen.findByText(/컨텍스트 사용량 약 60 \/ 100 \(60%\)/)).toBeInTheDocument();
+
+  await userEvent.type(screen.getByLabelText("System 프롬프트"), "친절하게");
+
+  expect(await screen.findByText(/컨텍스트 사용량 약 16 \/ 100 \(16%\)/)).toBeInTheDocument();
+  expect(screen.queryByText(/컨텍스트 사용량 약 60 \/ 100 \(60%\)/)).toBeNull();
+});
+
+it("메시지 전송 후 컨텍스트 크기를 다시 조회한다", async () => {
+  localStorage.setItem("crefleai_token", "t");
+  let modelCalls = 0;
+  const mock = vi.fn(async (url: RequestInfo | URL) => {
+    if (String(url).includes("/v1/models")) {
+      modelCalls += 1;
+      return modelsResponse(modelCalls === 1 ? 100 : 200);
+    }
+    return sseResponse(delta("답"));
+  });
+  vi.stubGlobal("fetch", mock);
+
+  await sendMessage("안녕");
+
+  expect(await screen.findByText(/컨텍스트 사용량 약 10 \/ 200 \(5%\)/)).toBeInTheDocument();
+  expect(modelCalls).toBeGreaterThanOrEqual(2);
 });
 
 it("컨텍스트 크기를 조회할 수 없으면 사용량을 표시하지 않는다", async () => {
