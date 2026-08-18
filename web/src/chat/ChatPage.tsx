@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { splitSseEvents } from "../sse";
@@ -10,6 +10,7 @@ const DEFAULT_TEMPERATURE = 0.7;
 const ESTIMATED_CHARS_PER_TOKEN = 2;
 const ESTIMATED_TOKENS_PER_MESSAGE = 4;
 const CONTEXT_WARNING_RATIO = 0.8;
+const MODEL_LOOKUP_DEBOUNCE_MS = 300;
 
 // 마지막 응답의 usage 기준 실제 토큰 수. messageCount 시점의 대화까지만 유효하다.
 interface ContextUsage {
@@ -60,6 +61,7 @@ function AssistantContent({
 
 export default function ChatPage() {
   const [token, setToken] = useState(localStorage.getItem("crefleai_token") ?? "");
+  const [modelLookupToken, setModelLookupToken] = useState(token);
   // 최초 마운트 시에만 토큰 유무로 초기화 — 이후에는 사용자가 직접 접고 펼친다
   const [settingsOpen, setSettingsOpen] = useState(!token);
   const [system, setSystem] = useState(localStorage.getItem("crefleai_system") ?? "");
@@ -71,26 +73,41 @@ export default function ChatPage() {
   const [contextLength, setContextLength] = useState<number | null>(null);
   const [usage, setUsage] = useState<ContextUsage | null>(null);
 
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    (async () => {
+  const loadContextLength = useCallback(
+    async (authToken: string, isCancelled: () => boolean = () => false) => {
       try {
         const res = await fetch("/v1/models", {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${authToken}` },
         });
         if (!res.ok) return;
         const body = await res.json();
         const length = body?.data?.[0]?.context_length;
-        if (!cancelled && typeof length === "number") setContextLength(length);
+        if (!isCancelled() && typeof length === "number") setContextLength(length);
       } catch {
         // 조회 실패는 사용량 표시 생략으로 처리한다 — 채팅 동작은 막지 않는다
       }
-    })();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!token) {
+      setModelLookupToken("");
+      setContextLength(null);
+      return;
+    }
+    const timer = setTimeout(() => setModelLookupToken(token), MODEL_LOOKUP_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [token]);
+
+  useEffect(() => {
+    if (!modelLookupToken) return;
+    let cancelled = false;
+    void loadContextLength(modelLookupToken, () => cancelled);
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [loadContextLength, modelLookupToken]);
 
   function saveToken(value: string) {
     setToken(value);
@@ -99,6 +116,7 @@ export default function ChatPage() {
 
   function saveSystem(value: string) {
     setSystem(value);
+    setUsage(null);
     localStorage.setItem("crefleai_system", value);
   }
 
@@ -163,6 +181,7 @@ export default function ChatPage() {
       );
     } finally {
       setBusy(false);
+      if (token) await loadContextLength(token);
     }
   }
 
@@ -175,6 +194,7 @@ export default function ChatPage() {
           ...messages.map((message) => message.content),
         ]);
   const usageRatio = contextLength ? usedTokens / contextLength : 0;
+  const isWarning = usageRatio >= CONTEXT_WARNING_RATIO;
 
   return (
     <main className="chat">
@@ -222,8 +242,9 @@ export default function ChatPage() {
         ))}
       </ol>
       {contextLength !== null && contextLength > 0 && (
-        <p className={usageRatio >= CONTEXT_WARNING_RATIO ? "context-usage warning" : "context-usage"}>
-          컨텍스트 사용량 약 {usedTokens.toLocaleString()} / {contextLength.toLocaleString()} ({Math.round(usageRatio * 100)}%)
+        <p className={isWarning ? "context-usage warning" : "context-usage"}>
+          컨텍스트 사용량 약 {usedTokens.toLocaleString()} /{" "}
+          {contextLength.toLocaleString()} ({Math.round(usageRatio * 100)}%)
         </p>
       )}
       {error && <p role="alert">{error}</p>}

@@ -50,7 +50,7 @@ class WorkerManager:
 
     @property
     def context_length(self) -> int | None:
-        """서빙 모델의 유효 컨텍스트 크기 — 모델 한계와 워커 n_ctx 중 작은 값."""
+        """선택된 모델의 유효 컨텍스트 크기 — 실제 서빙 여부는 status로 판단한다."""
         if self._model is None:
             return None
         return min(self._model.context_length, self._ctx)
