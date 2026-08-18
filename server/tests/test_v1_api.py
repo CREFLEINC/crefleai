@@ -101,6 +101,21 @@ def test_비스트리밍_프록시(v1_client, user_token):
     assert res.json()["usage"]["total_tokens"] == 5
 
 
+def test_비스트리밍_성공은_요청_지표에_반영(v1_client, user_token):
+    res = v1_client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    snapshot = v1_client.app.state.request_metrics.snapshot()
+    assert res.status_code == 200
+    assert snapshot.rpm == 1
+    assert snapshot.success == 1
+    assert snapshot.failure == 0
+    assert snapshot.in_flight == 0
+
+
 def test_스트리밍_프록시(v1_client, user_token):
     with v1_client.stream(
         "POST",
@@ -111,6 +126,24 @@ def test_스트리밍_프록시(v1_client, user_token):
         assert res.headers["content-type"].startswith("text/event-stream")
         lines = [l for l in res.iter_lines() if l.startswith("data: ")]
     assert lines[-1] == "data: [DONE]"
+
+
+def test_스트리밍_완료는_요청_지표에_반영(v1_client, user_token):
+    with v1_client.stream(
+        "POST",
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"messages": [{"role": "user", "content": "hi"}], "stream": True},
+    ) as res:
+        lines = [l for l in res.iter_lines() if l.startswith("data: ")]
+
+    snapshot = v1_client.app.state.request_metrics.snapshot()
+    assert res.status_code == 200
+    assert lines[-1] == "data: [DONE]"
+    assert snapshot.rpm == 1
+    assert snapshot.success == 1
+    assert snapshot.failure == 0
+    assert snapshot.in_flight == 0
 
 
 def test_워커_미가동시_503(v1_client, user_token):
@@ -142,6 +175,21 @@ def test_워커_연결_실패시_502(broken_worker_client, user_token):
     assert res.json()["error"]["type"] == "server_error"
 
 
+def test_워커_연결_실패는_요청_지표에_실패로_반영(broken_worker_client, user_token):
+    res = broken_worker_client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    snapshot = broken_worker_client.app.state.request_metrics.snapshot()
+    assert res.status_code == 502
+    assert snapshot.rpm == 1
+    assert snapshot.success == 0
+    assert snapshot.failure == 1
+    assert snapshot.in_flight == 0
+
+
 def test_스트리밍_중_연결_실패는_error_이벤트(broken_worker_client, user_token):
     with broken_worker_client.stream(
         "POST",
@@ -153,3 +201,21 @@ def test_스트리밍_중_연결_실패는_error_이벤트(broken_worker_client,
         lines = [l for l in res.iter_lines() if l.startswith("data: ")]
     payload = json.loads(lines[0][6:])
     assert payload["error"]["type"] == "server_error"
+
+
+def test_스트리밍_중_연결_실패는_요청_지표에_실패로_반영(broken_worker_client, user_token):
+    with broken_worker_client.stream(
+        "POST",
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"messages": [{"role": "user", "content": "hi"}], "stream": True},
+    ) as res:
+        lines = [l for l in res.iter_lines() if l.startswith("data: ")]
+
+    snapshot = broken_worker_client.app.state.request_metrics.snapshot()
+    assert res.status_code == 200
+    assert json.loads(lines[0][6:])["error"]["type"] == "server_error"
+    assert snapshot.rpm == 1
+    assert snapshot.success == 0
+    assert snapshot.failure == 1
+    assert snapshot.in_flight == 0

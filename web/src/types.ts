@@ -40,6 +40,41 @@ export interface AdminModels {
   worker: WorkerInfo;
 }
 
+export interface GpuMetric {
+  index: number;
+  name: string;
+  utilization_percent: number;
+  memory_used_bytes: number;
+  memory_total_bytes: number;
+  memory_used_percent: number;
+}
+
+export interface DiskMetric {
+  status: string;
+  path: string;
+  total_bytes: number | null;
+  used_bytes: number | null;
+  free_bytes: number | null;
+  used_percent: number | null;
+  error: string | null;
+}
+
+export interface RequestMetrics {
+  window_seconds: number;
+  rpm: number;
+  success: number;
+  failure: number;
+  in_flight: number;
+}
+
+export interface AdminMetrics {
+  sampled_at: string | null;
+  stale: boolean;
+  disk: DiskMetric;
+  gpus: GpuMetric[];
+  requests: RequestMetrics;
+}
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;

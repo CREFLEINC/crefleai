@@ -46,6 +46,20 @@ textarea {
   margin: 1rem 0;
   word-break: break-all;
 }
+.metric-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+.metric-grid article {
+  border: 1px solid #8884;
+  border-radius: 6px;
+  padding: 1rem;
+}
+.metric-row {
+  display: grid;
+  gap: 0.35rem;
+}
 .messages {
   list-style: none;
   padding: 0;

@@ -44,3 +44,10 @@ compose 플러그인이 구버전이면 `gpus:` 대신 아래로 대체:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+## 모니터링 GPU 지표
+
+관리자 `/admin/monitoring` 화면의 GPU 지표는 컨테이너 안에서 NVML을 조회한다.
+호스트에 NVIDIA 드라이버와 NVIDIA Container Toolkit이 설치되어 있어야 하며,
+compose 설정의 `gpus: all` 또는 동등한 device reservation이 적용되어야 한다.
+NVML이 노출되지 않으면 GPU 항목만 `수집 불가`로 표시되고 서버와 다른 지표는 계속 동작한다.

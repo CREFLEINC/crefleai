@@ -18,6 +18,7 @@ from crefleai.db import Database
 from crefleai.models.catalog import load_catalog, model_file
 from crefleai.models.downloads import DownloadManager
 from crefleai.models.worker_manager import WorkerManager
+from crefleai.monitoring.metrics import RequestMetricsTracker, SystemMetricsSampler
 
 
 class SPAStaticFiles(StaticFiles):
@@ -81,6 +82,10 @@ async def _lifespan(app: FastAPI):
     app.state.download_manager = DownloadManager(settings.models_dir, app.state.catalog)
     app.state.worker_manager = WorkerManager(settings.worker_port, settings.worker_ctx)
     app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(10, read=None))
+    app.state.request_metrics = RequestMetricsTracker()
+    app.state.system_metrics = SystemMetricsSampler(settings.data_dir)
+    app.state.system_metrics.sample_once()
+    app.state.system_metrics.start()
     app.state.restore_task = _maybe_restore(app)
     yield
     for task_name in ("serve_task", "restore_task"):
@@ -91,6 +96,7 @@ async def _lifespan(app: FastAPI):
                 await task
             except asyncio.CancelledError:
                 pass
+    await app.state.system_metrics.stop()
     await app.state.worker_manager.stop()
     await app.state.http_client.aclose()
     app.state.db.close()

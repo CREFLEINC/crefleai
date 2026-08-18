@@ -125,6 +125,19 @@ def list_models(
     }
 
 
+@router.get("/metrics")
+def metrics(request: Request, _admin: dict = Depends(require_admin)):
+    system = request.app.state.system_metrics.snapshot()
+    requests = request.app.state.request_metrics.snapshot()
+    return {
+        "sampled_at": system.sampled_at,
+        "stale": system.stale,
+        "disk": asdict(system.disk),
+        "gpus": [asdict(gpu) for gpu in system.gpus],
+        "requests": asdict(requests),
+    }
+
+
 @router.post("/models/{model_id}/download", status_code=202)
 async def download_model(
     model_id: str,
