@@ -94,6 +94,15 @@ it("저장된 Temperature가 숫자가 아니면 기본값 0.7로 동작한다",
   expect(screen.getByLabelText(/Temperature/)).toHaveValue("0.7");
 });
 
+it.each(["999", "-5"])(
+  "저장된 Temperature가 범위를 벗어나면 기본값 0.7로 동작한다: %s",
+  (saved) => {
+    localStorage.setItem("crefleai_temperature", saved);
+    render(<ChatPage />);
+    expect(screen.getByLabelText(/Temperature/)).toHaveValue("0.7");
+  },
+);
+
 it("모델의 컨텍스트 윈도우 크기와 현재 사용량을 표시한다", async () => {
   localStorage.setItem("crefleai_token", "t");
   stubFetch(undefined, 100);
