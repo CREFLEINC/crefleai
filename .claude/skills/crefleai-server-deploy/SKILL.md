@@ -1,11 +1,11 @@
 ---
 name: crefleai-server-deploy
-description: "CrefleAI를 doctordoom GPU 서버에 실제로 배포하는 절차 — 원자적 소스 전송, Docker 이미지 빌드/push, docker compose 재기동, 헬스체크·GPU 검증, 디렉터리 스왑 롤백. '서버에 배포해줘', 'doctordoom에 올려줘', 'v0.X.0 배포 진행', '배포 재개', '롤백해줘', '이전 버전으로 되돌려줘' 요청 시 사용. crefleai-deploy-executor 에이전트가 이 절차를 따른다."
+description: "CrefleAI를 doctordoom GPU 서버에 실제로 배포하는 절차 — 추출/빌드/스왑 분리, `.env`를 빌드 컨텍스트에서 배제, Docker 이미지 빌드/push, docker compose 재기동, 헬스체크·GPU 검증, 디렉터리 스왑 롤백(자동 복구 포함). '서버에 배포해줘', 'doctordoom에 올려줘', 'v0.X.0 배포 진행', '배포 재개', '롤백해줘', '이전 버전으로 되돌려줘' 요청 시 사용. crefleai-deploy-executor 에이전트가 이 절차를 따른다."
 ---
 
 # CrefleAI 서버 배포 절차 (doctordoom)
 
-`crefleai-release` 스킬로 확정된 git 태그를 사내 GPU 서버에 실제로 올리는 절차. 2026-08-27 `v0.2.0 → v0.3.0` 수동 배포로 검증된 뒤, 리뷰에서 지적된 원자성·판정 정확성 문제를 고쳐 정리했다.
+`crefleai-release` 스킬로 확정된 git 태그를 사내 GPU 서버에 실제로 올리는 절차. 2026-08-27 `v0.2.0 → v0.3.0` 수동 배포로 검증된 뒤, 두 차례 리뷰에서 지적된 원자성·판정 정확성·시크릿 격리 문제를 고쳐 정리했다.
 
 ## 버전 표기 규칙 (혼동 주의)
 
@@ -18,6 +18,14 @@ description: "CrefleAI를 doctordoom GPU 서버에 실제로 배포하는 절차
 
 `deploy/.env.example`의 `CREFLEAI_IMAGE_TAG=0.1.0`처럼 이미지 태그는 `v` 없는 형식이 이 저장소의 규약이다(CLAUDE.md "버전 = 태그 = 이미지 태그 동기"). `<태그>`를 이미지 태그 자리에 그대로 넣지 않는다.
 
+## 설계 원칙: 빌드는 `.env` 없이, 스왑은 빌드 성공 후에만
+
+이전 버전은 `.env`를 `app.new`에 먼저 이식한 뒤 그 디렉터리로 이미지를 빌드했다 — 이러면 `docker build`가 `app.new` 전체를 빌드 컨텍스트로 데몬에 전송하는 과정에서, 최종 이미지에 `COPY`되지 않더라도 JWT secret·관리자 비밀번호가 담긴 `.env`가 빌드 컨텍스트·캐시에 노출된다(저장소에 루트 `.dockerignore`가 없다). 이번 구조는 순서를 바꿔 이 노출 자체를 없앤다:
+
+1. **추출** (Phase 1) — `git archive` 내용만 `app.new`에 푼다. `.env`는 아직 등장하지 않는다.
+2. **빌드·push** (Phase 2~3) — `app.new`를 빌드 컨텍스트로 쓴다. `.env`가 존재하지 않으므로 컨텍스트에 포함될 수가 없다. 빌드가 실패해도 라이브 `/home/crefleai/app`은 전혀 건드리지 않는다.
+3. **스왑 + `.env` 이식** (Phase 4) — 빌드·push가 성공한 뒤에만 라이브 디렉터리를 교체하고, 그 시점에 `.env`를 옮긴다.
+
 ## 서버 정보
 
 | 항목 | 값 |
@@ -25,7 +33,7 @@ description: "CrefleAI를 doctordoom GPU 서버에 실제로 배포하는 절차
 | SSH | `ssh crefleai@doctordoom` (배포 전용 계정) |
 | 배포 작업 디렉터리 | `/home/crefleai/app` (배포 중에는 `/home/crefleai/app.new`, 이전 릴리스는 `/home/crefleai/app.prev`) |
 | Compose 파일 | `/home/crefleai/app/deploy/docker-compose.yml` |
-| `.env` 위치 | `/home/crefleai/app/deploy/.env` (git 미추적 — 소스 전송 스크립트가 직접 이식한다) |
+| `.env` 위치 | `/home/crefleai/app/deploy/.env` (git 미추적 — Phase 4에서만 이식) |
 | 데이터 볼륨 | `/home/crefleai/data` → 컨테이너 `/app/data` (이미지 교체·디렉터리 스왑과 무관하게 유지됨) |
 | 레지스트리 | `hub.crefle.com/crefle-ai/crefleai` |
 | 서비스 확인 | `http://doctordoom:8000/` |
@@ -41,11 +49,15 @@ ssh -o BatchMode=yes -o ConnectTimeout=5 crefleai@doctordoom \
 
 - 이미 대상 태그와 같은 버전이 `healthy`로 떠 있으면 재배포가 필요한지 사용자에게 먼저 확인한다.
 - 현재 실행 중인 버전 문자열을 기록해둔다 — 롤백 보고에 필요하다.
-- `/home/crefleai/app.new`가 이미 존재하면(이전 시도가 중단된 상태) 삭제 후 재시작한다 — Phase 1의 원자적 스크립트가 어차피 정리한다.
+- `/home/crefleai/app.new`가 이미 존재하면(이전 시도가 중단된 상태) 삭제 후 재시작한다 — Phase 1이 어차피 정리한다.
+- **`/home/crefleai/app`이 없고 `/home/crefleai/app.prev`만 있으면, 직전 배포의 Phase 4 스왑이 중간에 끊긴 것이다.** 이 경우 먼저 복구한다:
+  ```bash
+  ssh -o BatchMode=yes -o ConnectTimeout=5 crefleai@doctordoom \
+    "mv /home/crefleai/app.prev /home/crefleai/app"
+  ```
+  복구 후 사용자에게 이전 시도가 중단됐음을 보고하고, Phase 1부터 다시 시작한다.
 
-## Phase 1: 원자적 소스 전송 + `.env` 이식 + 이미지 태그 갱신
-
-**핵심 설계:** 라이브 `/home/crefleai/app`은 스크립트 마지막 `mv` 한 번에만 바뀐다. 그 전 단계(추출, `.env` 복사, `sed` 치환)가 전부 `/home/crefleai/app.new`라는 임시 디렉터리에서만 일어나므로, 중간에 실패해도 서비스는 이전 버전 그대로 살아있다. 예전 방식(라이브 디렉터리를 `rm -rf`로 먼저 지우고 재추출)은 중간에 끊기면 서비스가 반쯤 지워진 상태로 남는 문제가 있었다 — 이번 구조는 그 문제를 없앤다.
+## Phase 1: 소스 추출 (`.env` 미포함)
 
 ```bash
 git archive <태그> | ssh -o BatchMode=yes -o ConnectTimeout=10 crefleai@doctordoom '
@@ -53,48 +65,44 @@ git archive <태그> | ssh -o BatchMode=yes -o ConnectTimeout=10 crefleai@doctor
   rm -rf /home/crefleai/app.new
   mkdir -p /home/crefleai/app.new
   tar -x -C /home/crefleai/app.new
-  cp -p /home/crefleai/app/deploy/.env /home/crefleai/app.new/deploy/.env
-  sed -i "s/^CREFLEAI_IMAGE_TAG=.*/CREFLEAI_IMAGE_TAG=<신규버전>/" /home/crefleai/app.new/deploy/.env
-  rm -rf /home/crefleai/app.prev
-  mv /home/crefleai/app /home/crefleai/app.prev
-  mv /home/crefleai/app.new /home/crefleai/app
-  echo TRANSFER_OK
+  echo EXTRACT_OK
 '
 ```
 
-`.env` 내용은 절대 `cat`하지 않는다 — `cp`로 이식하고 `sed`로 한 줄만 치환한다.
+**이 스크립트의 `rm -rf`는 Claude Code 자동 모드 분류기가 차단할 수 있다.** 대상이 라이브 서비스가 아니라 임시 디렉터리(`app.new`)라는 점은 사용자에게 설명할 때 근거로 쓸 수 있지만, 그렇다고 우회를 시도하지 않는다 — 에이전트 정의(`crefleai-deploy-executor.md`)의 "권한 경계" 절차를 따라 사용자에게 정확한 명령을 제시하고 직접 실행해달라고 요청한다.
 
-**이 스크립트의 `rm -rf`/`mv`는 Claude Code 자동 모드 분류기가 차단할 수 있다.** 대상이 라이브 서비스가 아니라 임시(`app.new`)·백업(`app.prev`) 디렉터리라는 점은 사용자에게 설명할 때 근거로 쓸 수 있지만, 그렇다고 우회를 시도하지 않는다 — 에이전트 정의(`crefleai-deploy-executor.md`)의 "권한 경계" 절차를 따라 사용자에게 정확한 명령을 제시하고 직접 실행해달라고 요청한다.
-
-전송 후 반드시 검증한다 — "실행했다"는 말만 믿지 않는다:
+추출 후 반드시 검증한다 — "실행했다"는 말만 믿지 않는다:
 
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=5 crefleai@doctordoom \
-  "grep -m1 version /home/crefleai/app/server/pyproject.toml && \
-   grep '^CREFLEAI_IMAGE_TAG' /home/crefleai/app/deploy/.env"
-# 기대값: version = "<신규버전>" / CREFLEAI_IMAGE_TAG=<신규버전>
+  "grep -m1 version /home/crefleai/app.new/server/pyproject.toml"
+# 기대값: version = "<신규버전>"
 ```
 
-## Phase 2: 이미지 빌드 (CUDA 빌드 — 시간이 걸림, 백그라운드로)
+## Phase 2: 이미지 빌드 (`app.new` 컨텍스트 — `.env` 없음, CUDA 빌드라 시간이 걸림, 백그라운드로)
 
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=10 crefleai@doctordoom \
-  "bash -lc 'set -o pipefail; docker build -f /home/crefleai/app/deploy/Dockerfile \
+  "bash -lc 'set -o pipefail; docker build -f /home/crefleai/app.new/deploy/Dockerfile \
      -t hub.crefle.com/crefle-ai/crefleai:<신규버전> \
      -t hub.crefle.com/crefle-ai/crefleai:latest \
-     /home/crefleai/app 2>&1 | tee /home/crefleai/build-<신규버전>.log; echo BUILD_EXIT:\$?'"
+     /home/crefleai/app.new 2>&1 | tee /home/crefleai/build-<신규버전>.log; \
+     ec=\$?; echo BUILD_EXIT:\$ec; exit \$ec'"
 ```
 
 Bash `run_in_background: true`로 실행한다(10~30분 이상 걸릴 수 있음). CUDA 베이스 이미지 태그가 안 맞으면 `--build-arg CUDA_VERSION=<사용가능 태그>`가 필요할 수 있다(`deploy/README.md` 참조).
 
-**빌드 성공을 로그 문자열이나 `BUILD_EXIT`만으로 판정하지 않는다.** 파이프라인(`| tee`) 뒤의 `$?`는 `pipefail` 없이는 `tee`의 종료 코드이지, `docker build`의 종료 코드가 아니다(위 명령은 `set -o pipefail`로 이를 고쳤다). 더 결정적인 문제는 **BuildKit(Docker 23+ 기본값)이 `Successfully tagged`를 아예 출력하지 않는다는 것** — 로그 문자열 매칭은 Docker 버전에 따라 항상 실패할 수 있다. 빌드 완료 알림을 받으면 반드시 아래로 이미지 존재 자체를 확인한다:
+**빌드 성공 판정은 두 단계로 나눈다 — 어느 한쪽만 보지 않는다:**
+
+1. **이 SSH 호출 자체의 종료 코드를 먼저 본다.** `ec=$?; echo BUILD_EXIT:$ec; exit $ec`로 파이프라인(`docker build | tee`)의 실제 종료 코드를 캡처해 로그에 남긴 **뒤에도** 그 코드로 `bash -lc`를 종료시킨다 — 그냥 `set -eo pipefail`만 쓰면 실패 시 `echo`가 아예 실행되지 않아 로그에 완료 표시가 안 남고, 반대로 `echo`로 끝내기만 하면(이전 버전의 버그) `echo`가 마지막 명령이 되어 SSH 호출 자체는 항상 0으로 끝나버린다. 이 SSH 호출의 종료 코드가 0이 아니면 **빌드는 실패한 것이다.**
+2. 종료 코드가 0일 때만 아래로 이미지 존재를 재확인한다. **종료 코드가 0이 아니면 아래 확인을 생략하고 곧바로 실패로 처리한다** — 재빌드 실패 시 동일 태그의 예전 이미지가 레지스트리/로컬에 이미 남아 있으면 `docker image inspect`가 `IMAGE_OK`를 반환할 수 있기 때문이다(오래된 이미지를 새 빌드로 착각하는 함정).
 
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=5 crefleai@doctordoom \
   "docker image inspect hub.crefle.com/crefle-ai/crefleai:<신규버전> >/dev/null 2>&1 && echo IMAGE_OK || echo IMAGE_MISSING"
 ```
 
-`IMAGE_MISSING`이면 빌드 로그(`/home/crefleai/build-<신규버전>.log`) 마지막 부분을 확인해 원인을 보고하고, Phase 3으로 넘어가지 않는다.
+빌드가 실패했으면(1번 기준) 빌드 로그(`/home/crefleai/build-<신규버전>.log`) 마지막 부분을 확인해 원인을 보고하고, Phase 3으로 넘어가지 않는다. 이 시점까지 라이브 `/home/crefleai/app`은 전혀 바뀌지 않았으므로 서비스에는 영향이 없다.
 
 ## Phase 3: Push
 
@@ -104,14 +112,42 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 crefleai@doctordoom \
    docker push hub.crefle.com/crefle-ai/crefleai:latest && echo PUSH_OK"
 ```
 
-## Phase 4: 재기동
+## Phase 4: 스왑 + `.env` 이식 + 이미지 태그 갱신
+
+빌드·push가 끝난 뒤에만 라이브 디렉터리를 교체한다. `ERR` 트랩으로 두 번째 `mv`가 실패하는 경우(디스크 오류 등 정상적으로 스크립트가 계속 실행되는 실패)를 자동 복구한다 — 다만 SSH 강제 종료·프로세스 kill처럼 트랩 자체가 실행될 기회가 없는 중단은 막을 수 없다는 점은 그대로 남는다. 그런 경우를 위해 Phase 0에 복구 절차를 넣어뒀다.
+
+```bash
+ssh -o BatchMode=yes -o ConnectTimeout=10 crefleai@doctordoom '
+  set -e
+  trap "if [ ! -d /home/crefleai/app ] && [ -d /home/crefleai/app.prev ]; then mv /home/crefleai/app.prev /home/crefleai/app; echo SWAP_RECOVERED >&2; fi" ERR
+  rm -rf /home/crefleai/app.prev
+  mv /home/crefleai/app /home/crefleai/app.prev
+  mv /home/crefleai/app.new /home/crefleai/app
+  cp -p /home/crefleai/app.prev/deploy/.env /home/crefleai/app/deploy/.env
+  sed -i "s/^CREFLEAI_IMAGE_TAG=.*/CREFLEAI_IMAGE_TAG=<신규버전>/" /home/crefleai/app/deploy/.env
+  echo SWAP_OK
+'
+```
+
+`.env` 내용은 절대 `cat`하지 않는다 — `cp`로 이식하고 `sed`로 한 줄만 치환한다. 이 스크립트의 `rm -rf`/`mv`도 분류기가 차단할 수 있다 — Phase 1과 같은 방식으로 대응한다.
+
+스왑 후 검증한다:
+
+```bash
+ssh -o BatchMode=yes -o ConnectTimeout=5 crefleai@doctordoom \
+  "grep -m1 version /home/crefleai/app/server/pyproject.toml && \
+   grep '^CREFLEAI_IMAGE_TAG' /home/crefleai/app/deploy/.env"
+# 기대값: version = "<신규버전>" / CREFLEAI_IMAGE_TAG=<신규버전>
+```
+
+## Phase 5: 재기동
 
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=10 crefleai@doctordoom \
   "cd /home/crefleai/app/deploy && docker compose up -d && docker compose ps"
 ```
 
-## Phase 5: 헬스체크 대기
+## Phase 6: 헬스체크 대기
 
 로컬에서 이 SSH 호출 자체는 Bash `run_in_background: true` 또는 `Monitor` 도구로 감싸 완료 알림을 받는다(수동 `sleep N && ssh ...` 체이닝은 하네스가 막는다). 원격 셸의 `until` 루프에는 **반드시 `timeout`을 씌운다** — 컨테이너가 없거나 이미 죽은 상태면 `docker inspect`가 계속 실패해 `$s`가 빈 문자열로 남고, 루프가 끝나지 않아 SSH가 무한 대기하게 된다.
 
@@ -125,7 +161,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 crefleai@doctordoom \
 
 `HEALTH_TIMEOUT`이나 `unhealthy`가 나오면 **자동으로 롤백하지 않는다** — `docker compose logs --tail 100`으로 원인을 확인해 보고하고, 사용자에게 롤백 여부를 확인한다.
 
-## Phase 6: GPU 패스스루 검증
+## Phase 7: GPU 패스스루 검증
 
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=10 crefleai@doctordoom \
@@ -136,22 +172,23 @@ NVML이 노출되지 않으면 관리자 `/admin/monitoring`의 GPU 카드만 "�
 
 ## 롤백 — 디렉터리 스왑 (compose 설정까지 함께 되돌림)
 
-Phase 1에서 만들어진 `/home/crefleai/app.prev`는 **이전 릴리스의 소스 트리 전체**(당시의 `docker-compose.yml`, 당시의 `.env` 포함)다. 이미지 태그만 `.env`에서 되돌리면 "구버전 이미지 + 신버전 compose 설정"이 섞일 수 있으므로, 롤백은 디렉터리째 교체한다:
+Phase 4에서 만들어진 `/home/crefleai/app.prev`는 **이전 릴리스의 소스 트리 전체**(당시의 `docker-compose.yml`, 당시의 `.env` 포함)다. 이미지 태그만 `.env`에서 되돌리면 "구버전 이미지 + 신버전 compose 설정"이 섞일 수 있으므로, 롤백은 디렉터리째 교체한다:
 
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=10 crefleai@doctordoom '
   set -e
   test -d /home/crefleai/app.prev || { echo NO_PREV_BUILD; exit 1; }
+  trap "if [ ! -d /home/crefleai/app ] && [ -d /home/crefleai/app.rolledback ]; then mv /home/crefleai/app.rolledback /home/crefleai/app; echo ROLLBACK_RECOVERED >&2; fi" ERR
   mv /home/crefleai/app /home/crefleai/app.rolledback
   mv /home/crefleai/app.prev /home/crefleai/app
   cd /home/crefleai/app/deploy && docker compose up -d && docker compose ps
 '
 ```
 
-- `/home/crefleai/app.prev`는 다음 배포의 Phase 1에서 덮어써지므로, **직전 릴리스 1단계까지만** 롤백 가능하다. 그보다 이전으로 돌아가려면 `git archive <이전 태그>`로 Phase 1부터 다시 실행한다.
+- `/home/crefleai/app.prev`는 다음 배포의 Phase 4에서 덮어써지므로, **직전 릴리스 1단계까지만** 롤백 가능하다. 그보다 이전으로 돌아가려면 `git archive <이전 태그>`로 Phase 1부터 다시 실행한다.
 - 데이터 볼륨(`/home/crefleai/data`)은 디렉터리 스왑과 무관하게 유지되므로 롤백 시 데이터 손실은 없다.
 - `NO_PREV_BUILD`가 나오면(아직 한 번도 배포 안 했거나 이미 롤백해서 `app.prev`가 없음) 사용자에게 상황을 보고하고, 필요하면 `<이전 태그>`로 Phase 1부터 재실행하도록 안내한다.
 
 ## 최종 보고 형식
 
-배포 완료 시 아래 항목을 표로 요약해 보고한다: 버전, 이미지 빌드 검증 결과(`IMAGE_OK`), push 결과, 헬스체크 결과, GPU 검증 결과, 롤백 방법(`app.prev` 존재 여부 포함). 브리핑 문서(`docs/reports/.../crefleai-release-briefing`) 체크리스트 중 이 스킬이 수행하지 않은 항목(예: 실모델 GGUF 서빙 스모크 테스트)이 있으면 명시적으로 "미수행"이라고 남긴다 — 조용히 생략하지 않는다.
+배포 완료 시 아래 항목을 표로 요약해 보고한다: 버전, 이미지 빌드 검증 결과(SSH 종료 코드 + `IMAGE_OK`), push 결과, 헬스체크 결과, GPU 검증 결과, 롤백 방법(`app.prev` 존재 여부 포함). 브리핑 문서(`docs/reports/.../crefleai-release-briefing`) 체크리스트 중 이 스킬이 수행하지 않은 항목(예: 실모델 GGUF 서빙 스모크 테스트)이 있으면 명시적으로 "미수행"이라고 남긴다 — 조용히 생략하지 않는다.

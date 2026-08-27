@@ -13,10 +13,12 @@ CrefleAI(`server/pyproject.toml`의 버전 = git 태그 `vX.Y.Z` = 배포 이미
 
 ```bash
 git fetch origin -q
-git describe --tags --abbrev=0 origin/main   # 최근 태그
-git log <최근태그>..origin/main --oneline    # 태그 이후 미배포 커밋
-grep -m1 version server/pyproject.toml       # 로컬(main) 현재 버전 문자열
+git describe --tags --abbrev=0 origin/main            # 최근 태그
+git log <최근태그>..origin/main --format='%s%n%b%n===' # 태그 이후 미배포 커밋 — 제목+본문 전부
+git show origin/main:server/pyproject.toml | grep -m1 version   # origin/main의 현재 버전 문자열
 ```
+
+`--oneline`은 커밋 제목만 가져온다 — `BREAKING CHANGE:`가 본문(footer)에만 적힌 커밋을 놓쳐 major를 minor/patch로 잘못 판단할 수 있다. 반드시 `%b`(본문)까지 포함해서 본다. 로컬 `main`이 최신이 아닐 수 있으므로 `git show origin/main:...`으로 원격 기준 버전을 읽는다(로컬 `main`을 체크아웃하지 않는다 — 이유는 Phase 5 참조).
 
 - 미배포 커밋이 없으면: 이미 최신이라고 보고하고 종료 (범프 불필요).
 - 이미 해당 브랜치/PR이 열려 있으면(예: `gh pr list --search "chore/bump-version"`), 중복 생성하지 않고 기존 PR 상태를 보고한다.
@@ -80,14 +82,16 @@ gh pr merge <PR번호> --squash
 
 ## Phase 5: 태그 생성·push
 
-머지 확인 후 로컬 main을 갱신하고 태그한다.
+머지 확인 후 **로컬 `main`을 체크아웃하지 않고** `origin/main`을 직접 태그한다.
 
 ```bash
-git checkout main && git pull origin main
-grep -m1 version server/pyproject.toml   # 범프가 실제로 반영됐는지 확인
-git tag vX.Y.Z
+git fetch origin main -q
+git show origin/main:server/pyproject.toml | grep -m1 version   # 범프가 실제로 반영됐는지 확인
+git tag vX.Y.Z origin/main
 git push origin vX.Y.Z
 ```
+
+`git checkout main`은 이 저장소의 작업 방식(워크트리 격리)과 구조적으로 충돌한다 — 이 스킬 자체가 별도 워크트리에서 실행되는데, `main`이 이미 다른 워크트리(주 작업 디렉터리)에 체크아웃되어 있으면 git이 `fatal: 'main' is already used by worktree at ...`로 거부한다. 로컬 `main`을 건드릴 필요 자체가 없다 — `origin/main`에 직접 태그하면 병합된 정확한 커밋을 가리키고, 다른 워크트리의 체크아웃 상태에 영향을 주지 않는다.
 
 ## Phase 6: 정리
 

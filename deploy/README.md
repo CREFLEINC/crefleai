@@ -2,6 +2,8 @@
 
 설계: `docs/superpowers/specs/2026-08-04-crefleai-deploy-design.md`
 
+**Claude Code로 배포할 때는 이 문서의 수동 절차 대신 `.claude/skills/crefleai-deploy-orchestrator` 스킬(또는 "배포해줘" 요청)을 쓴다.** 아래 "릴리스 절차"·"롤백"의 원시 명령은 하네스를 쓸 수 없을 때의 수동 fallback이다 — 라이브 `~/app`을 바로 `rm -rf`하고, 롤백이 이미지 태그만 되돌려 compose 설정 불일치가 생길 수 있는 등 하네스가 이미 고친 위험이 그대로 남아 있다. 수동으로 진행해야 한다면 `.claude/skills/crefleai-server-deploy/SKILL.md`의 절차(임시 디렉터리 경유 스왑, `.env`를 빌드 컨텍스트에서 배제)를 참고해 직접 옮겨 실행하는 편이 더 안전하다.
+
 ## 빌드 & push (crefleai@doctordoom, ~/app 에 소스 스냅샷 전제)
 
     VERSION=0.1.0

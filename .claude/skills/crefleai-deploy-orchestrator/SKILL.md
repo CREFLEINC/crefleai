@@ -97,11 +97,11 @@ Agent({
 1. 사용자가 "이번 변경분 배포해줘"라고 요청
 2. Phase 0에서 미배포 커밋 3개(#38~#41) 확인, 서버는 이전 버전으로 healthy
 3. Phase 2: release-manager가 minor 범프(0.2.0→0.3.0) 제안, 사용자 승인, PR 머지, 태그 push
-4. Phase 3: deploy-executor가 원자적 소스 전송(사용자 직접 실행 필요) → 이미지 존재 검증 → push → 재기동 → healthy 확인 → GPU 검증
+4. Phase 3: deploy-executor가 소스 추출(사용자 직접 실행 필요) → `.env` 없이 이미지 빌드 → 이미지 존재 검증 → push → 스왑(`.env` 이식) → 재기동 → healthy 확인 → GPU 검증
 5. Phase 4: 배포 완료 요약 보고
 
 ### 에러 흐름 — 권한 차단 후 재개
-1. Phase 3에서 원자적 소스 전송 스크립트(임시 디렉터리 준비 후 마지막 `mv`로 교체)가 분류기에 차단됨
+1. Phase 3에서 소스 추출 스크립트(`rm -rf`로 임시 디렉터리 정리)가 분류기에 차단됨
 2. deploy-executor가 정확한 명령과 "대상은 임시 디렉터리이고 라이브 서비스는 마지막 mv 전까지 그대로다" 근거를 제시하고 대기 상태로 보고 종료
 3. 오케스트레이터가 사용자에게 전달, 사용자가 직접 실행 후 "실행했어" 응답
 4. 오케스트레이터가 deploy-executor를 SendMessage로 재개 → 서버의 `pyproject.toml` 버전을 조회해 전송 결과 검증 후 Phase 3 나머지 단계 계속
