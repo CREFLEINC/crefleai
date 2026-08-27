@@ -97,7 +97,7 @@ Agent({
 1. 사용자가 "이번 변경분 배포해줘"라고 요청
 2. Phase 0에서 미배포 커밋 3개(#38~#41) 확인, 서버는 이전 버전으로 healthy
 3. Phase 2: release-manager가 minor 범프(0.2.0→0.3.0) 제안, 사용자 승인, PR 머지, 태그 push
-4. Phase 3: deploy-executor가 소스 추출(사용자 직접 실행 필요) → `.env` 없이 이미지 빌드 → 이미지 존재 검증 → push → 스왑(`.env` 이식) → 재기동 → healthy 확인 → GPU 검증
+4. Phase 3: deploy-executor가 소스 추출(사용자 직접 실행 필요) → `.env` 없이 이미지 빌드 → 이미지 존재 검증 → push → `.env` 이식(아직 임시 디렉터리) → 스왑 → 재기동 → healthy 확인 → GPU 검증
 5. Phase 4: 배포 완료 요약 보고
 
 ### 에러 흐름 — 권한 차단 후 재개

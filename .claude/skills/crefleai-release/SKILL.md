@@ -44,23 +44,27 @@ CLAUDE.md 규칙(워크트리 격리, main 직접 푸시 금지)에 따라 반�
 git worktree add .claude/worktrees/bump-version-X.Y.Z -b chore/bump-version-X.Y.Z origin/main
 ```
 
-`server/pyproject.toml`의 `version = "..."` 줄만 새 버전으로 수정한다. 다른 파일(README 예시 등)은 건드리지 않는다 — 문서 예시일 뿐 실제 버전 참조가 아니다.
+**Bash 도구 호출은 서로 독립적이다 — 한 호출에서 `cd`해도 다음 호출의 작업 디렉터리에는 반영되지 않는다.** 이후 모든 git 명령은 `git -C .claude/worktrees/bump-version-X.Y.Z ...`처럼 경로를 명시해서, 어느 Bash 호출에서 실행하든 항상 이 워크트리를 대상으로 하게 만든다 — `cd` 뒤에 있으니 될 거라고 가정하지 않는다.
+
+`server/pyproject.toml`(경로: `.claude/worktrees/bump-version-X.Y.Z/server/pyproject.toml`)의 `version = "..."` 줄만 Edit 도구로 새 버전으로 수정한다(Edit 도구는 절대/상대 경로를 직접 받으므로 cwd와 무관하다). 다른 파일(README 예시 등)은 건드리지 않는다 — 문서 예시일 뿐 실제 버전 참조가 아니다.
 
 ```bash
-cd .claude/worktrees/bump-version-X.Y.Z
-git add server/pyproject.toml
-git commit -m "chore: 릴리스 버전 X.Y.Z로 범프
+git -C .claude/worktrees/bump-version-X.Y.Z add server/pyproject.toml
+git -C .claude/worktrees/bump-version-X.Y.Z commit -m "chore: 릴리스 버전 X.Y.Z로 범프
 
 <이번 릴리스에 포함되는 주요 변경 1~2줄 요약, 관련 PR 번호>"
-git push -u origin chore/bump-version-X.Y.Z
+git -C .claude/worktrees/bump-version-X.Y.Z push -u origin chore/bump-version-X.Y.Z
 ```
 
 ## Phase 3: PR 생성
 
 이 저장소의 기존 PR(#31~#33)은 한글 헤더(`## 요약` / `## 변경 내용` / `## 검증`)를 쓴다 — 영문 `## Summary`가 아니라 이 관례를 따른다.
 
+`gh pr create`는 `--head`를 생략하면 **현재 브랜치**를 기준으로 만든다 — Phase 2의 `cd`가 이 호출까지 이어진다는 보장이 없으므로(위 설명 참조), 작업 디렉터리가 실제로 어디든 상관없이 올바른 브랜치를 잡도록 **`--base`/`--head`를 항상 명시한다**:
+
 ```bash
-gh pr create --title "chore: 릴리스 버전 X.Y.Z로 범프" --body "$(cat <<'EOF'
+gh pr create --base main --head chore/bump-version-X.Y.Z \
+  --title "chore: 릴리스 버전 X.Y.Z로 범프" --body "$(cat <<'EOF'
 ## 요약
 - <이번 릴리스에 포함된 변경 요약 + 관련 PR 번호 나열>
 
@@ -107,7 +111,7 @@ squash 머지는 브랜치를 main의 조상으로 남기지 않으므로 `git b
 | 상황 | 대응 |
 |---|---|
 | PR 브랜치가 이미 존재 | 기존 브랜치/PR 상태를 먼저 확인, 재사용하거나 사용자에게 확인 |
-| 머지 후 `git pull`이 fast-forward가 아님 | 다른 변경이 먼저 들어온 것 — 강제로 정리하지 않고 사용자에게 보고 |
+| Phase 5에서 `git show origin/main:server/pyproject.toml`의 버전이 기대한 범프 값과 다름 | 머지 사이에 다른 커밋이 `origin/main`에 먼저 들어온 것 — 임의로 태그하지 않고 사용자에게 보고, 최신 `origin/main` 커밋을 다시 확인한 뒤 진행 |
 | 태그가 이미 존재 | 덮어쓰지 않는다 (`git tag -f`는 배포 이력을 혼란스럽게 만든다) — 사용자에게 확인 |
 | 미배포 커밋이 `docs:`/`chore:`뿐 | 배포 필요성 자체를 사용자에게 재확인 |
 
