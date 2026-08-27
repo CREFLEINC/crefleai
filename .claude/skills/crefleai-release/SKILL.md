@@ -86,16 +86,17 @@ gh pr merge <PR번호> --squash
 
 ## Phase 5: 태그 생성·push
 
-머지 확인 후 **로컬 `main`을 체크아웃하지 않고** `origin/main`을 직접 태그한다.
+**`origin/main`의 현재 HEAD가 아니라, Phase 4에서 머지한 PR의 정확한 merge 커밋을 태깅한다.** `origin/main`의 버전 문자열만 확인하고 그 시점의 HEAD를 태깅하면 경합이 생긴다 — 머지 직후 버전 파일을 건드리지 않는 다른 PR이 먼저 `main`에 들어오면, 버전 문자열 검사는 그대로 통과하면서 태그는 Phase 0~1에서 분석·승인받지 않은 커밋까지 가리키게 된다(일반적인 커밋은 `pyproject.toml`을 바꾸지 않으므로 이 경합은 문자열 비교로 걸러지지 않는다). PR 번호는 이미 Phase 3~4에서 알고 있으므로, GitHub이 기록한 그 PR의 실제 merge SHA를 직접 물어본다:
 
 ```bash
-git fetch origin main -q
-git show origin/main:server/pyproject.toml | grep -m1 version   # 범프가 실제로 반영됐는지 확인
-git tag vX.Y.Z origin/main
+merge_sha=$(gh pr view <PR번호> --json mergeCommit --jq '.mergeCommit.oid')
+git fetch origin -q
+git show "$merge_sha":server/pyproject.toml | grep -m1 version   # 이 정확한 커밋에 범프가 반영됐는지 확인
+git tag vX.Y.Z "$merge_sha"
 git push origin vX.Y.Z
 ```
 
-`git checkout main`은 이 저장소의 작업 방식(워크트리 격리)과 구조적으로 충돌한다 — 이 스킬 자체가 별도 워크트리에서 실행되는데, `main`이 이미 다른 워크트리(주 작업 디렉터리)에 체크아웃되어 있으면 git이 `fatal: 'main' is already used by worktree at ...`로 거부한다. 로컬 `main`을 건드릴 필요 자체가 없다 — `origin/main`에 직접 태그하면 병합된 정확한 커밋을 가리키고, 다른 워크트리의 체크아웃 상태에 영향을 주지 않는다.
+**로컬 `main`은 체크아웃하지 않는다.** `git checkout main`은 이 저장소의 작업 방식(워크트리 격리)과 구조적으로 충돌한다 — 이 스킬 자체가 별도 워크트리에서 실행되는데, `main`이 이미 다른 워크트리(주 작업 디렉터리)에 체크아웃되어 있으면 git이 `fatal: 'main' is already used by worktree at ...`로 거부한다. `merge_sha`에 직접 태그하면 로컬 `main`이나 `origin/main`의 최신 상태와 무관하게 항상 정확한 커밋을 가리킨다.
 
 ## Phase 6: 정리
 
@@ -111,7 +112,7 @@ squash 머지는 브랜치를 main의 조상으로 남기지 않으므로 `git b
 | 상황 | 대응 |
 |---|---|
 | PR 브랜치가 이미 존재 | 기존 브랜치/PR 상태를 먼저 확인, 재사용하거나 사용자에게 확인 |
-| Phase 5에서 `git show origin/main:server/pyproject.toml`의 버전이 기대한 범프 값과 다름 | 머지 사이에 다른 커밋이 `origin/main`에 먼저 들어온 것 — 임의로 태그하지 않고 사용자에게 보고, 최신 `origin/main` 커밋을 다시 확인한 뒤 진행 |
+| Phase 5에서 `gh pr view`가 `mergeCommit`을 못 주거나(머지 직후 GitHub 쪽 반영 지연 등) `git show "$merge_sha":...`의 버전이 기대한 범프 값과 다름 | 잘못된 커밋에 태그하지 않는다 — 잠시 후 재조회하거나 사용자에게 상황을 보고하고 지시를 받는다 |
 | 태그가 이미 존재 | 덮어쓰지 않는다 (`git tag -f`는 배포 이력을 혼란스럽게 만든다) — 사용자에게 확인 |
 | 미배포 커밋이 `docs:`/`chore:`뿐 | 배포 필요성 자체를 사용자에게 재확인 |
 
