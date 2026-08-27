@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>CrefleAI 서비스 변경 브리핑</title>
+
+<link rel="stylesheet" href="./crefle-doc/crefle-doc.css">
+
+<style>
+  :root {
+    --doc-running-title: 'CrefleAI 서비스 변경 브리핑';
+  }
+</style>
+</head>
+
+<body class="doc doc-numbered">
+
+<header class="doc-cover">
+  <p class="eyebrow">CREFLE · 배포 변경 브리핑</p>
+  <h1>CrefleAI 서비스 변경 브리핑</h1>
+  <p class="lede">기존 단일 GPU 서버 배포 구조에서 이번 개발로 추가·변경된 운영 기능과 배포 준비 상태 요약</p>
+
+  <table data-document-info>
+    <caption>문서 정보</caption>
+    <tbody>
+      <tr><th>작성자</th><td>[사용자 확인 필요]</td></tr>
+      <tr><th>작성일</th><td>2026-08-27</td></tr>
+      <tr><th>작성시간</th><td>[사용자 확인 필요]</td></tr>
+      <tr><th>문서 버전</th><td>0.1.0</td></tr>
+      <tr><th>열람 대상</th><td>[사용자 확인 필요]</td></tr>
+    </tbody>
+  </table>
+</header>
+
+<h2>요약</h2>
+
+<p>
+  이번 개발은 기존의 <strong>단일 FastAPI 애플리케이션 + 내장 정적 웹 + 로컬 llama.cpp 워커</strong> 배포 구조를 유지하면서,
+  운영자가 서비스 상태를 더 직접적으로 확인하고 Chat 테스트 화면을 안정적으로 사용할 수 있도록 관리·관측·프론트 기능을 보강한 변경이다.
+</p>
+
+<div class="kpi">
+  <div><span class="big">1</span><span class="lbl">신규 관리자<br>모니터링 화면</span></div>
+  <div><span class="big">3</span><span class="lbl">주요 관측 지표<br>GPU·Disk·요청</span></div>
+  <div><span class="big">0</span><span class="lbl">열린 이슈·PR<br>확인 시점 기준</span></div>
+</div>
+
+<div class="callout callout-success">
+  <p><strong>배포 판단.</strong> 자동화 테스트와 프론트 프로덕션 빌드, Docker Compose 설정 검증은 통과했다. 단, 실제 GPU 서버에서의 전체 Docker 이미지 빌드와 NVML 노출 확인은 배포 직전 운영 환경에서 한 번 더 수행해야 한다.</p>
+</div>
+
+<h2>기존 배포 구조</h2>
+
+<p>
+  기존 서비스는 하나의 Docker Compose 서비스로 실행된다. 컨테이너는 FastAPI 서버, 관리자 화면과 Chat 정적 웹, 로컬 추론 워커 제어 기능을 함께 포함한다.
+  데이터는 <code>/home/crefleai/data</code>에서 <code>/app/data</code>로 마운트되고, GPU는 Compose의 <code>gpus: all</code> 설정으로 컨테이너에 전달된다.
+</p>
+
+<table>
+  <caption>기존 구조의 주요 책임</caption>
+  <thead>
+    <tr><th>영역</th><th>역할</th></tr>
+  </thead>
+  <tbody>
+    <tr><th>FastAPI 서버</th><td>OpenAI 호환 API, 관리자 API, 인증, 정적 웹 서빙</td></tr>
+    <tr><th>WorkerManager</th><td>다운로드된 GGUF 모델을 로컬 워커 프로세스로 기동·감시</td></tr>
+    <tr><th>웹 UI</th><td>관리자 모델 관리, 토큰 관리, Chat 테스트</td></tr>
+    <tr><th>배포</th><td>단일 이미지와 단일 Compose 서비스로 운영</td></tr>
+  </tbody>
+</table>
+
+<h2>이번 개발로 변경된 부분</h2>
+
+<h3>관리자 모니터링 추가</h3>
+
+<p>
+  관리자 API에 <code>GET /api/admin/metrics</code>가 추가되었고, 관리자 화면에 <code>/admin/monitoring</code> 페이지가 연결되었다.
+  운영자는 브라우저에서 GPU 사용률, VRAM 사용량, 데이터 디스크 사용량, 최근 요청 처리량을 확인할 수 있다.
+</p>
+
+<table>
+  <caption>신규 모니터링 지표</caption>
+  <thead>
+    <tr><th>지표</th><th>수집 방식</th><th>운영 의미</th></tr>
+  </thead>
+  <tbody>
+    <tr><th>GPU</th><td>NVML(<code>nvidia-ml-py</code>)</td><td>GPU 사용률과 VRAM 압박 확인</td></tr>
+    <tr><th>Disk</th><td><code>CREFLEAI_DATA_DIR</code> 대상 disk usage</td><td>모델 파일과 DB가 위치한 데이터 볼륨 용량 확인</td></tr>
+    <tr><th>요청 처리량</th><td>최근 60초 sliding window</td><td>RPM, 성공, 실패, 처리 중 요청 수 확인</td></tr>
+  </tbody>
+</table>
+
+<p>
+  시스템 지표는 애플리케이션 lifespan에서 백그라운드 샘플러가 주기적으로 수집한다.
+  GPU 지표 수집 실패는 전체 API 장애로 전파하지 않고, GPU 항목만 수집 불가로 표시한다.
+</p>
+
+<h3>Chat 테스트 화면 안정화</h3>
+
+<p>
+  Chat 화면은 System 프롬프트와 Temperature를 localStorage에 저장하도록 개선되었다.
+  저장된 Temperature가 숫자가 아니거나 허용 범위 0~2를 벗어나면 기본값 0.7로 복구한다.
+</p>
+
+<p>
+  모델의 <code>context_length</code>를 <code>GET /v1/models</code>에서 조회해 컨텍스트 사용량을 표시한다.
+  실제 응답 usage가 있는 경우 실제 토큰 수를 사용하고, 없거나 현재 대화와 맞지 않으면 문자 수 기반 보수 추정값을 표시한다.
+</p>
+
+<h3>Harmony 출력 처리 개선</h3>
+
+<p>
+  gpt-oss Harmony 형식의 추론 과정과 최종 답변을 분리해 보여주며, 종료 토큰이 본문에 노출되지 않도록 후속 버그가 반영되었다.
+  채널 진입 판정도 특정 패턴에만 묶이지 않도록 일반화되어 형식 변화에 대한 내성이 높아졌다.
+</p>
+
+<h3>배포 구성 영향</h3>
+
+<p>
+  Compose 서비스 수와 포트 구조는 변경되지 않았다. 다만 GPU 지표를 보려면 운영 서버의 NVIDIA 드라이버와 NVIDIA Container Toolkit,
+  그리고 Compose의 GPU 전달 설정이 정상이어야 한다. 해당 조건이 충족되지 않으면 관리자 화면의 GPU 카드만 수집 불가로 표시된다.
+</p>
+
+<h2>배포 준비도 확인 결과</h2>
+
+<table>
+  <caption>검증 결과</caption>
+  <thead>
+    <tr><th>검증 항목</th><th>결과</th><th>비고</th></tr>
+  </thead>
+  <tbody>
+    <tr><th>백엔드 테스트</th><td>통과</td><td><code>uv run pytest</code>: 81 passed, 1 deselected</td></tr>
+    <tr><th>프론트 테스트</th><td>통과</td><td><code>npm test</code>: 10 files, 64 tests passed</td></tr>
+    <tr><th>프론트 프로덕션 빌드</th><td>통과</td><td><code>npm run build</code> 성공</td></tr>
+    <tr><th>Compose 설정 검증</th><td>통과</td><td><code>docker compose config</code> 성공</td></tr>
+    <tr><th>전체 Docker 이미지 빌드</th><td>미수행</td><td>CUDA·llama-cpp-python 빌드가 무거워 운영 GPU 서버에서 별도 수행 권장</td></tr>
+    <tr><th>실모델 추론 통합 테스트</th><td>미수행</td><td><code>CREFLEAI_TEST_GGUF</code>가 필요하므로 배포 서버에서 별도 수행</td></tr>
+  </tbody>
+</table>
+
+<h2>배포 전 체크리스트</h2>
+
+<ol>
+  <li><code>server/pyproject.toml</code> 버전과 이미지 태그를 이번 배포 버전으로 확정한다.</li>
+  <li>GPU 서버에서 전체 Docker 이미지를 빌드하고 registry에 push한다.</li>
+  <li>운영 <code>.env</code>에 <code>CREFLEAI_IMAGE_TAG</code>, <code>CREFLEAI_JWT_SECRET</code>, 관리자 초기 계정 값을 설정한다.</li>
+  <li><code>docker compose up -d</code> 후 <code>docker compose ps</code>에서 healthy 상태를 확인한다.</li>
+  <li>관리자 로그인 후 <code>/admin/monitoring</code>에서 Disk, 요청 지표, GPU 지표 수집 상태를 확인한다.</li>
+  <li>모델 1개를 다운로드·서빙하고 Chat 화면에서 스트리밍 응답, Harmony 표시, 컨텍스트 사용량 표시를 확인한다.</li>
+</ol>
+
+<h2>잔여 리스크</h2>
+
+<ul>
+  <li>테스트 환경의 JWT 테스트 키가 짧아 경고가 발생한다. 운영에서는 32바이트 이상 secret 사용이 필수다.</li>
+  <li>GPU 지표는 NVML 노출에 의존한다. 운영 서버의 NVIDIA Container Toolkit 설정이 빠지면 GPU 카드가 수집 불가로 보인다.</li>
+  <li>현재 버전은 여전히 단일 Compose 서비스 구조다. Gateway·Worker 분리는 별도 아키텍처 전환 과제로 남아 있다.</li>
+</ul>
+
+</body>
+</html>
