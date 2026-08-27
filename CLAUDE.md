@@ -34,3 +34,14 @@ CREFLEAI_TEST_GGUF=/path/to/tiny.gguf uv run pytest -m inference
 ## 배포
 
 `deploy/README.md` 참조. 릴리스는 `server/pyproject.toml` 버전 = git 태그 `vX.Y.Z` = 이미지 태그 동기 (SemVer).
+
+## 하네스: CrefleAI 배포 자동화
+
+**목표:** 버전 확정(PR/태그)부터 doctordoom GPU 서버 실배포(빌드/push/재기동/검증)까지 전 과정을 에이전트가 재현 가능하게 수행.
+
+**트리거:** 배포 관련 요청(배포해줘, 새 버전 배포, 릴리스 진행, doctordoom에 올려줘, 배포 재개, 롤백해줘 등) 시 `crefleai-deploy-orchestrator` 스킬을 사용하라. 버전 확인·서버 상태 확인 같은 단순 질문은 스킬 없이 직접 응답 가능.
+
+**변경 이력:**
+| 날짜 | 변경 내용 | 대상 | 사유 |
+|------|----------|------|------|
+| 2026-08-27 | 초기 구성 (release-manager/deploy-executor 에이전트 + release/server-deploy/orchestrator 스킬) | 전체 | v0.2.0→v0.3.0 수동 배포 성공 후 재사용 가능하게 하네스화. 프로덕션 서버 대상 파괴적 명령(rm -rf, sudo)이 자동 모드 분류기에 차단되는 것을 전제로 설계 — 해당 단계는 사용자 승인/직접 실행이 필요 |
