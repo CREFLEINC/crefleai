@@ -1,0 +1,121 @@
+---
+name: crefleai-release
+description: "CrefleAI 저장소의 릴리스 버전 확정 절차 — 미태그 커밋 분석, SemVer 판단, 워크트리에서 버전 범프, PR 생성/머지, git tag 생성·push. '버전 범프', '릴리스 버전 확정', '태그 만들어줘', 'PR 머지하고 태그 찍어줘' 요청 시 사용. crefleai-release-manager 에이전트가 이 절차를 따른다."
+---
+
+# CrefleAI 릴리스 버전 확정 절차
+
+CrefleAI(`server/pyproject.toml`의 버전 = git 태그 `vX.Y.Z` = 배포 이미지 태그, SemVer)의 다음 릴리스 버전을 확정하고 태그를 만드는 절차. 실제 서버 배포는 다루지 않는다 — 그건 `crefleai-server-deploy` 스킬의 영역이다.
+
+## Phase 0: 현재 상태 확인
+
+이 절차는 항상 라이브 상태를 조회하는 것으로 시작한다. 로컬 캐시나 이전 실행 기록을 신뢰하지 않는다 — 저장소는 git 명령으로, 서버는 SSH로 직접 조회한 값만 사실로 취급한다.
+
+```bash
+git fetch origin -q
+git describe --tags --abbrev=0 origin/main            # 최근 태그
+git log <최근태그>..origin/main --format='%s%n%b%n===' # 태그 이후 미배포 커밋 — 제목+본문 전부
+git show origin/main:server/pyproject.toml | grep -m1 version   # origin/main의 현재 버전 문자열
+```
+
+`--oneline`은 커밋 제목만 가져온다 — `BREAKING CHANGE:`가 본문(footer)에만 적힌 커밋을 놓쳐 major를 minor/patch로 잘못 판단할 수 있다. 반드시 `%b`(본문)까지 포함해서 본다. 로컬 `main`이 최신이 아닐 수 있으므로 `git show origin/main:...`으로 원격 기준 버전을 읽는다(로컬 `main`을 체크아웃하지 않는다 — 이유는 Phase 5 참조).
+
+- 미배포 커밋이 없으면: 이미 최신이라고 보고하고 종료 (범프 불필요).
+- 이미 해당 브랜치/PR이 열려 있으면(예: `gh pr list --search "chore/bump-version"`), 중복 생성하지 않고 기존 PR 상태를 보고한다.
+
+## Phase 1: SemVer 판단
+
+미배포 커밋들을 Conventional Commits 접두어로 분류해 범프 종류를 제안한다:
+
+| 커밋 패턴 | 범프 종류 |
+|---|---|
+| `feat:`, `feat(...)`(기능 추가) 포함, breaking 없음 | minor |
+| `fix:`만 있고 `feat:` 없음 | patch |
+| 커밋 본문에 `BREAKING CHANGE` 또는 제목에 `!` | major |
+| `docs:`, `chore:`만 있음 | 배포할 코드 변경이 없다는 뜻 — 사용자에게 정말 배포가 필요한지 먼저 확인 |
+
+제안 근거(포함된 PR 번호와 커밋 요약)를 사용자에게 제시하고 버전을 확정받는다. 이미 사용자가 버전을 지정했다면 이 단계를 건너뛴다.
+
+## Phase 2: 워크트리에서 버전 범프
+
+CLAUDE.md 규칙(워크트리 격리, main 직접 푸시 금지)에 따라 반드시 별도 워크트리에서 작업한다. 이 저장소는 워크트리를 `.claude/worktrees/` 아래에 두는 관례를 쓴다(`.gitignore`가 이 경로를 무시하도록 되어 있다) — 저장소 밖(`../`)에 만들지 않는다.
+
+```bash
+git worktree add .claude/worktrees/bump-version-X.Y.Z -b chore/bump-version-X.Y.Z origin/main
+```
+
+**Bash 도구 호출은 서로 독립적이다 — 한 호출에서 `cd`해도 다음 호출의 작업 디렉터리에는 반영되지 않는다.** 이후 모든 git 명령은 `git -C .claude/worktrees/bump-version-X.Y.Z ...`처럼 경로를 명시해서, 어느 Bash 호출에서 실행하든 항상 이 워크트리를 대상으로 하게 만든다 — `cd` 뒤에 있으니 될 거라고 가정하지 않는다.
+
+`server/pyproject.toml`(경로: `.claude/worktrees/bump-version-X.Y.Z/server/pyproject.toml`)의 `version = "..."` 줄만 Edit 도구로 새 버전으로 수정한다(Edit 도구는 절대/상대 경로를 직접 받으므로 cwd와 무관하다). 다른 파일(README 예시 등)은 건드리지 않는다 — 문서 예시일 뿐 실제 버전 참조가 아니다.
+
+```bash
+git -C .claude/worktrees/bump-version-X.Y.Z add server/pyproject.toml
+git -C .claude/worktrees/bump-version-X.Y.Z commit -m "chore: 릴리스 버전 X.Y.Z로 범프
+
+<이번 릴리스에 포함되는 주요 변경 1~2줄 요약, 관련 PR 번호>"
+git -C .claude/worktrees/bump-version-X.Y.Z push -u origin chore/bump-version-X.Y.Z
+```
+
+## Phase 3: PR 생성
+
+이 저장소의 기존 PR(#31~#33)은 한글 헤더(`## 요약` / `## 변경 내용` / `## 검증`)를 쓴다 — 영문 `## Summary`가 아니라 이 관례를 따른다.
+
+`gh pr create`는 `--head`를 생략하면 **현재 브랜치**를 기준으로 만든다 — Phase 2의 `cd`가 이 호출까지 이어진다는 보장이 없으므로(위 설명 참조), 작업 디렉터리가 실제로 어디든 상관없이 올바른 브랜치를 잡도록 **`--base`/`--head`를 항상 명시한다**:
+
+```bash
+gh pr create --base main --head chore/bump-version-X.Y.Z \
+  --title "chore: 릴리스 버전 X.Y.Z로 범프" --body "$(cat <<'EOF'
+## 요약
+- <이번 릴리스에 포함된 변경 요약 + 관련 PR 번호 나열>
+
+## 검증
+- [x] 버전 문자열만 변경, 동작 영향 없음
+EOF
+)"
+```
+
+## Phase 4: 머지 (사용자 승인 후에만)
+
+이 저장소는 GitHub Actions가 없어 사람의 확인이 유일한 검증 단계다. **사용자가 명시적으로 머지를 승인한 경우에만** 진행한다:
+
+```bash
+gh pr merge <PR번호> --squash
+```
+
+승인이 없으면 PR URL만 보고하고 멈춘다.
+
+## Phase 5: 태그 생성·push
+
+**`origin/main`의 현재 HEAD가 아니라, Phase 4에서 머지한 PR의 정확한 merge 커밋을 태깅한다.** `origin/main`의 버전 문자열만 확인하고 그 시점의 HEAD를 태깅하면 경합이 생긴다 — 머지 직후 버전 파일을 건드리지 않는 다른 PR이 먼저 `main`에 들어오면, 버전 문자열 검사는 그대로 통과하면서 태그는 Phase 0~1에서 분석·승인받지 않은 커밋까지 가리키게 된다(일반적인 커밋은 `pyproject.toml`을 바꾸지 않으므로 이 경합은 문자열 비교로 걸러지지 않는다). PR 번호는 이미 Phase 3~4에서 알고 있으므로, GitHub이 기록한 그 PR의 실제 merge SHA를 직접 물어본다:
+
+```bash
+merge_sha=$(gh pr view <PR번호> --json mergeCommit --jq '.mergeCommit.oid')
+git fetch origin -q
+git show "$merge_sha":server/pyproject.toml | grep -m1 version   # 이 정확한 커밋에 범프가 반영됐는지 확인
+git tag vX.Y.Z "$merge_sha"
+git push origin vX.Y.Z
+```
+
+**로컬 `main`은 체크아웃하지 않는다.** `git checkout main`은 이 저장소의 작업 방식(워크트리 격리)과 구조적으로 충돌한다 — 이 스킬 자체가 별도 워크트리에서 실행되는데, `main`이 이미 다른 워크트리(주 작업 디렉터리)에 체크아웃되어 있으면 git이 `fatal: 'main' is already used by worktree at ...`로 거부한다. `merge_sha`에 직접 태그하면 로컬 `main`이나 `origin/main`의 최신 상태와 무관하게 항상 정확한 커밋을 가리킨다.
+
+## Phase 6: 정리
+
+```bash
+git worktree remove .claude/worktrees/bump-version-X.Y.Z
+git branch -D chore/bump-version-X.Y.Z
+```
+
+squash 머지는 브랜치를 main의 조상으로 남기지 않으므로 `git branch -d`(소문자)는 항상 "not fully merged" 오류로 실패한다 — 반드시 `-D`(대문자)를 쓴다. 원격 브랜치는 보통 squash 머지 시 GitHub이 자동 삭제하므로, `git push origin --delete`가 "이미 없음" 오류를 내도 정상이다.
+
+## 에러 핸들링
+
+| 상황 | 대응 |
+|---|---|
+| PR 브랜치가 이미 존재 | 기존 브랜치/PR 상태를 먼저 확인, 재사용하거나 사용자에게 확인 |
+| Phase 5에서 `gh pr view`가 `mergeCommit`을 못 주거나(머지 직후 GitHub 쪽 반영 지연 등) `git show "$merge_sha":...`의 버전이 기대한 범프 값과 다름 | 잘못된 커밋에 태그하지 않는다 — 잠시 후 재조회하거나 사용자에게 상황을 보고하고 지시를 받는다 |
+| 태그가 이미 존재 | 덮어쓰지 않는다 (`git tag -f`는 배포 이력을 혼란스럽게 만든다) — 사용자에게 확인 |
+| 미배포 커밋이 `docs:`/`chore:`뿐 | 배포 필요성 자체를 사용자에게 재확인 |
+
+## 다음 단계
+
+태그 push까지 끝나면 `crefleai-server-deploy` 스킬(또는 `crefleai-deploy-executor` 에이전트)로 넘어가 실제 서버 배포를 진행한다. 이 스킬 단독으로는 서버에 아무 영향도 주지 않는다.
