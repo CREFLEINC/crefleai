@@ -45,3 +45,4 @@ CREFLEAI_TEST_GGUF=/path/to/tiny.gguf uv run pytest -m inference
 | 날짜 | 변경 내용 | 대상 | 사유 |
 |------|----------|------|------|
 | 2026-08-27 | 초기 구성 (release-manager/deploy-executor 에이전트 + release/server-deploy/orchestrator 스킬) | 전체 | v0.2.0→v0.3.0 수동 배포 성공 후 재사용 가능하게 하네스화. 프로덕션 서버 대상 파괴적 명령(rm -rf, sudo)이 자동 모드 분류기에 차단되는 것을 전제로 설계 — 해당 단계는 사용자 승인/직접 실행이 필요 |
+| 2026-08-27 | PR #43 리뷰 반영: 소스 전송을 임시 디렉터리 경유 원자적 스왑(+`.env` 이식 통합)으로 재설계, 빌드 성공 판정을 `docker image inspect` 기반으로 교체(BuildKit 로그 미출력·`pipefail` 누락 버그 수정), 헬스체크 루프에 `timeout` 추가, 롤백을 디렉터리 스왑 방식으로 변경, 워크트리 경로를 `.claude/worktrees/`로 통일, `git branch -d`→`-D`, PR 본문 헤더 한글화 | crefleai-server-deploy, crefleai-release, crefleai-deploy-executor, crefleai-deploy-orchestrator | 리뷰에서 Major 1건(빌드 성공 오판정)·Minor 6건 발견 — 실배포 전에 절차 자체의 정확성을 먼저 검증 |

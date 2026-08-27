@@ -36,16 +36,16 @@ grep -m1 version server/pyproject.toml       # 로컬(main) 현재 버전 문자
 
 ## Phase 2: 워크트리에서 버전 범프
 
-CLAUDE.md 규칙(워크트리 격리, main 직접 푸시 금지)에 따라 반드시 별도 워크트리에서 작업한다.
+CLAUDE.md 규칙(워크트리 격리, main 직접 푸시 금지)에 따라 반드시 별도 워크트리에서 작업한다. 이 저장소는 워크트리를 `.claude/worktrees/` 아래에 두는 관례를 쓴다(`.gitignore`가 이 경로를 무시하도록 되어 있다) — 저장소 밖(`../`)에 만들지 않는다.
 
 ```bash
-git worktree add ../crefleai-bump-vX.Y.Z -b chore/bump-version-X.Y.Z origin/main
+git worktree add .claude/worktrees/bump-version-X.Y.Z -b chore/bump-version-X.Y.Z origin/main
 ```
 
 `server/pyproject.toml`의 `version = "..."` 줄만 새 버전으로 수정한다. 다른 파일(README 예시 등)은 건드리지 않는다 — 문서 예시일 뿐 실제 버전 참조가 아니다.
 
 ```bash
-cd ../crefleai-bump-vX.Y.Z
+cd .claude/worktrees/bump-version-X.Y.Z
 git add server/pyproject.toml
 git commit -m "chore: 릴리스 버전 X.Y.Z로 범프
 
@@ -55,12 +55,14 @@ git push -u origin chore/bump-version-X.Y.Z
 
 ## Phase 3: PR 생성
 
+이 저장소의 기존 PR(#31~#33)은 한글 헤더(`## 요약` / `## 변경 내용` / `## 검증`)를 쓴다 — 영문 `## Summary`가 아니라 이 관례를 따른다.
+
 ```bash
 gh pr create --title "chore: 릴리스 버전 X.Y.Z로 범프" --body "$(cat <<'EOF'
-## Summary
+## 요약
 - <이번 릴리스에 포함된 변경 요약 + 관련 PR 번호 나열>
 
-## Test plan
+## 검증
 - [x] 버전 문자열만 변경, 동작 영향 없음
 EOF
 )"
@@ -90,9 +92,11 @@ git push origin vX.Y.Z
 ## Phase 6: 정리
 
 ```bash
-git worktree remove ../crefleai-bump-vX.Y.Z
-git branch -d chore/bump-version-X.Y.Z   # 원격 브랜치는 보통 squash 머지 시 자동 삭제됨
+git worktree remove .claude/worktrees/bump-version-X.Y.Z
+git branch -D chore/bump-version-X.Y.Z
 ```
+
+squash 머지는 브랜치를 main의 조상으로 남기지 않으므로 `git branch -d`(소문자)는 항상 "not fully merged" 오류로 실패한다 — 반드시 `-D`(대문자)를 쓴다. 원격 브랜치는 보통 squash 머지 시 GitHub이 자동 삭제하므로, `git push origin --delete`가 "이미 없음" 오류를 내도 정상이다.
 
 ## 에러 핸들링
 

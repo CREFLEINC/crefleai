@@ -18,7 +18,7 @@ CrefleAI를 사내 GPU 서버(doctordoom)에 배포하는 전체 과정을 조�
 | release-manager | `crefleai-release-manager` | 버전 확정, PR, 머지, 태그 | `crefleai-release` | 확정된 태그(`vX.Y.Z`) |
 | deploy-executor | `crefleai-deploy-executor` | 서버 빌드/배포/검증/롤백 | `crefleai-server-deploy` | 배포 결과 요약 |
 
-두 에이전트 모두 `Agent` 도구로 호출하되 **`model: "opus"`를 명시**한다.
+두 에이전트 모두 `Agent` 도구로 호출한다. 모델은 각 에이전트 정의 파일(`crefleai-release-manager.md`, `crefleai-deploy-executor.md`)의 `model: opus`를 따르므로 호출부에서 별도로 지정할 필요는 없다 — 모델을 바꿀 일이 있으면 정의 파일 한 곳만 고치면 되게 하기 위함이다.
 
 ## 워크플로우
 
@@ -52,7 +52,6 @@ ssh -o BatchMode=yes -o ConnectTimeout=5 crefleai@doctordoom \
 ```
 Agent({
   subagent_type: "crefleai-release-manager",
-  model: "opus",
   description: "CrefleAI 릴리스 버전 확정",
   prompt: "<목표 버전(지정됐다면), 이번 릴리스에 포함할 변경 범위, PR 머지에 대한 사용자 승인 여부를 명시>"
 })
@@ -66,7 +65,6 @@ Agent({
 ```
 Agent({
   subagent_type: "crefleai-deploy-executor",
-  model: "opus",
   description: "CrefleAI 서버 배포",
   prompt: "<Phase 2에서 확정된 태그, 서버 배포 목적, 롤백 모드 여부>"
 })
@@ -80,7 +78,7 @@ Agent({
 
 ### Phase 4: 결과 종합 및 보고
 
-1. deploy-executor의 최종 보고(버전, 헬스체크, GPU 검증, `.env` 백업 경로, 롤백 방법)를 수집한다.
+1. deploy-executor의 최종 보고(버전, 이미지 빌드 검증, 헬스체크, GPU 검증, 롤백 방법)를 수집한다.
 2. release-manager의 PR/태그 정보와 합쳐 하나의 요약으로 사용자에게 제시한다.
 3. `docs/reports/**/crefleai-release-briefing*` 문서의 배포 전 체크리스트 중 이 파이프라인이 다루지 않는 항목(예: 실모델 GGUF 서빙 스모크 테스트)이 있으면 "미수행"으로 명시한다 — 조용히 생략하지 않는다.
 
@@ -99,12 +97,12 @@ Agent({
 1. 사용자가 "이번 변경분 배포해줘"라고 요청
 2. Phase 0에서 미배포 커밋 3개(#38~#41) 확인, 서버는 이전 버전으로 healthy
 3. Phase 2: release-manager가 minor 범프(0.2.0→0.3.0) 제안, 사용자 승인, PR 머지, 태그 push
-4. Phase 3: deploy-executor가 `.env` 백업 → 소스 전송(사용자 직접 실행 필요) → 빌드 → push → 재기동 → healthy 확인 → GPU 검증
+4. Phase 3: deploy-executor가 원자적 소스 전송(사용자 직접 실행 필요) → 이미지 존재 검증 → push → 재기동 → healthy 확인 → GPU 검증
 5. Phase 4: 배포 완료 요약 보고
 
 ### 에러 흐름 — 권한 차단 후 재개
-1. Phase 3에서 소스 전송 단계의 `rm -rf`가 분류기에 차단됨
-2. deploy-executor가 정확한 명령과 ".env는 이미 백업됨" 근거를 제시하고 대기 상태로 보고 종료
+1. Phase 3에서 원자적 소스 전송 스크립트(임시 디렉터리 준비 후 마지막 `mv`로 교체)가 분류기에 차단됨
+2. deploy-executor가 정확한 명령과 "대상은 임시 디렉터리이고 라이브 서비스는 마지막 mv 전까지 그대로다" 근거를 제시하고 대기 상태로 보고 종료
 3. 오케스트레이터가 사용자에게 전달, 사용자가 직접 실행 후 "실행했어" 응답
 4. 오케스트레이터가 deploy-executor를 SendMessage로 재개 → 서버의 `pyproject.toml` 버전을 조회해 전송 결과 검증 후 Phase 3 나머지 단계 계속
 5. 최종 배포 완료 보고
