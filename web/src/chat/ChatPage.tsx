@@ -9,7 +9,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { splitSseEvents } from "../sse";
-import { splitThink } from "../think";
+import { splitThink, toAssistantPromptFields } from "../think";
 import type { ChatMessage } from "../types";
 import Brand from "../ui/Brand";
 import {
@@ -46,6 +46,16 @@ const SUGGESTIONS = [
 interface ContextUsage {
   tokens: number;
   messageCount: number;
+}
+
+type PromptMessage = ChatMessage & { thinking?: string };
+
+function toPromptMessage(message: ChatMessage): PromptMessage {
+  if (message.role !== "assistant") return message;
+  return {
+    role: message.role,
+    ...toAssistantPromptFields(message.content),
+  };
 }
 
 function estimateTokens(texts: string[]): number {
@@ -203,9 +213,10 @@ export default function ChatPage() {
     setBusy(true);
     let assistant = "";
     try {
-      const payload: ChatMessage[] = system
+      const promptHistory: ChatMessage[] = system
         ? [{ role: "system", content: system }, ...history]
         : history;
+      const payload: PromptMessage[] = promptHistory.map(toPromptMessage);
       const res = await fetch("/v1/chat/completions", {
         method: "POST",
         headers: {

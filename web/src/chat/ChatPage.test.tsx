@@ -359,6 +359,45 @@ it("Harmony 형식 응답의 추론 과정을 분리하고 종료 토큰을 숨�
   expect(screen.queryByText(/<\|(channel|return)\|>/)).toBeNull();
 });
 
+it("Harmony 응답은 다음 요청에서 thinking과 content로 분리해 전송한다", async () => {
+  localStorage.setItem("crefleai_token", "t");
+  const completionResponses = [
+    sseResponse(
+      delta("<|channel|>analysis<|message|>먼저 분석<|end|>"),
+      delta("<|start|>assistant<|channel|>final<|message|>최종 답변<|return|>"),
+    ),
+    sseResponse(delta("후속 답변")),
+  ];
+  const requestBodies: Array<{ messages: unknown[] }> = [];
+  const mock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    if (String(url).includes("/v1/models")) return modelsResponse(null);
+    requestBodies.push(JSON.parse(String(init?.body)));
+    const response = completionResponses.shift();
+    if (!response) throw new Error("completion 응답이 부족합니다");
+    return response;
+  });
+  vi.stubGlobal("fetch", mock);
+
+  render(<ChatPage />);
+  const user = userEvent.setup();
+  const composer = screen.getByLabelText("메시지");
+
+  await user.type(composer, "첫 질문");
+  await user.click(screen.getByRole("button", { name: "보내기" }));
+  expect(await screen.findByText("최종 답변")).toBeInTheDocument();
+
+  await user.type(composer, "후속 질문");
+  await user.click(screen.getByRole("button", { name: "보내기" }));
+  expect(await screen.findByText("후속 답변")).toBeInTheDocument();
+
+  expect(requestBodies).toHaveLength(2);
+  expect(requestBodies[1].messages).toEqual([
+    { role: "user", content: "첫 질문" },
+    { role: "assistant", thinking: "먼저 분석", content: "최종 답변" },
+    { role: "user", content: "후속 질문" },
+  ]);
+});
+
 it("think가 없는 응답은 본문만 표시한다", async () => {
   localStorage.setItem("crefleai_token", "t");
   stubFetch(sseResponse(delta("일반 답변")));

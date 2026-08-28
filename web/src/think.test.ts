@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { splitThink } from "./think";
+import { splitThink, toAssistantPromptFields } from "./think";
 
 it("think가 없으면 전체를 본문으로 반환한다", () => {
   expect(splitThink("그냥 답변")).toEqual({ think: null, answer: "그냥 답변", thinking: false });
@@ -149,4 +149,17 @@ it("스트리밍이 끝난 Harmony 추론의 마커 접두사를 보존한다", 
     answer: "",
     thinking: true,
   });
+});
+
+it("완성된 Harmony를 다음 요청의 thinking과 content 필드로 변환한다", () => {
+  expect(
+    toAssistantPromptFields(
+      "<|channel|>analysis<|message|>분석<|end|>" +
+        "<|start|>assistant<|channel|>final<|message|>답변<|return|>",
+    ),
+  ).toEqual({ thinking: "분석", content: "답변" });
+});
+
+it("일반 응답은 다음 요청에서도 content를 그대로 유지한다", () => {
+  expect(toAssistantPromptFields("일반 답변")).toEqual({ content: "일반 답변" });
 });
