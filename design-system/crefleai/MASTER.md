@@ -17,26 +17,48 @@
 
 ### Color Palette
 
-| Role | Hex | CSS Variable |
-|------|-----|--------------|
-| Primary | `#1E293B` | `--color-primary` |
-| On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#334155` | `--color-secondary` |
-| On Secondary | `#FFFFFF` | `--color-on-secondary` |
-| Accent/CTA | `#22C55E` | `--color-accent` |
-| On Accent/CTA | `#0F172A` | `--color-on-accent` |
-| Background | `#0F172A` | `--color-background` |
-| Foreground | `#F8FAFC` | `--color-foreground` |
-| Card | `#1B2336` | `--color-card` |
-| Card Foreground | `#F8FAFC` | `--color-card-foreground` |
-| Muted | `#272F42` | `--color-muted` |
-| Muted Foreground | `#94A3B8` | `--color-muted-foreground` |
-| Border | `#475569` | `--color-border` |
-| Destructive | `#EF4444` | `--color-destructive` |
-| On Destructive | `#000000` | `--color-on-destructive` |
-| Ring | `#FFFFFF` | `--color-ring` |
+| Role                   | Hex       | CSS Variable               |
+| ---------------------- | --------- | -------------------------- |
+| Primary                | `#C9252C` | `--color-primary`          |
+| Primary Hover          | `#AD2026` | `--color-primary-hover`    |
+| Primary Text (Dark UI) | `#EF7A7F` | `--color-primary-text`     |
+| On Primary             | `#FFFFFF` | `--color-on-primary`       |
+| Secondary              | `#334155` | `--color-secondary`        |
+| On Secondary           | `#FFFFFF` | `--color-on-secondary`     |
+| Success/Online         | `#22C55E` | `--color-success`          |
+| On Success             | `#07130B` | `--color-on-success`       |
+| Background             | `#0F172A` | `--color-background`       |
+| Foreground             | `#F8FAFC` | `--color-foreground`       |
+| Card                   | `#1B2336` | `--color-card`             |
+| Card Foreground        | `#F8FAFC` | `--color-card-foreground`  |
+| Muted                  | `#272F42` | `--color-muted`            |
+| Muted Foreground       | `#94A3B8` | `--color-muted-foreground` |
+| Border                 | `#475569` | `--color-border`           |
+| Destructive            | `#F87171` | `--color-danger`           |
+| On Destructive         | `#0F172A` | `--color-on-danger`        |
+| Ring                   | `#C9252C` | `--color-ring`             |
 
-**Color Notes:** Dark tech + status green
+**Color Notes:** CREFLE red is the only brand/CTA primary. Green is reserved for healthy, online, serving, and successful states so operational meaning is never conflated with brand emphasis.
+
+### Token Architecture
+
+```css
+/* Primitive */
+--color-brand-500: #c9252c;
+--color-brand-600: #ad2026;
+--color-green-500: #22c55e;
+
+/* Semantic */
+--color-primary: var(--color-brand-500);
+--color-primary-hover: var(--color-brand-600);
+--color-primary-text: var(--color-brand-300); /* dark surfaces */
+--color-success: var(--color-green-500);
+
+/* Component */
+--button-primary-background: var(--color-primary);
+--button-primary-background-hover: var(--color-primary-hover);
+--button-primary-foreground: var(--color-on-primary);
+```
 
 ### Typography
 
@@ -82,8 +104,8 @@
 ```css
 /* Primary Button */
 .btn-primary {
-  background: #22C55E;
-  color: white;
+  background: var(--button-primary-background);
+  color: var(--button-primary-foreground);
   padding: 12px 24px;
   border-radius: 8px;
   font-weight: 600;
@@ -92,15 +114,14 @@
 }
 
 .btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
+  background: var(--button-primary-background-hover);
 }
 
 /* Secondary Button */
 .btn-secondary {
   background: transparent;
-  color: #1E293B;
-  border: 2px solid #1E293B;
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border-strong);
   padding: 12px 24px;
   border-radius: 8px;
   font-weight: 600;
@@ -113,7 +134,8 @@
 
 ```css
 .card {
-  background: #0F172A;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 24px;
   box-shadow: var(--shadow-md);
@@ -123,7 +145,7 @@
 
 .card:hover {
   box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
+  border-color: var(--color-border-strong);
 }
 ```
 
@@ -132,16 +154,18 @@
 ```css
 .input {
   padding: 12px 16px;
-  border: 1px solid #E2E8F0;
+  color: var(--color-foreground);
+  background: var(--color-card-solid);
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
   font-size: 16px;
   transition: border-color 200ms ease;
 }
 
 .input:focus {
-  border-color: #1E293B;
+  border-color: var(--color-primary);
   outline: none;
-  box-shadow: 0 0 0 3px #1E293B20;
+  box-shadow: var(--focus-ring-shadow);
 }
 ```
 

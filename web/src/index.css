@@ -9,6 +9,14 @@
     sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  /* Primitive color tokens */
+  --color-brand-300: #ef7a7f;
+  --color-brand-500: #c9252c;
+  --color-brand-600: #ad2026;
+  --color-green-500: #22c55e;
+  --color-green-700: #15803d;
+
+  /* Semantic color tokens */
   --color-background: #0f172a;
   --color-background-deep: #090f1c;
   --color-foreground: #f8fafc;
@@ -19,9 +27,14 @@
   --color-muted: #272f42;
   --color-border: rgba(148, 163, 184, 0.24);
   --color-border-strong: rgba(148, 163, 184, 0.42);
-  --color-primary: #22c55e;
-  --color-primary-hover: #4ade80;
-  --color-on-primary: #07130b;
+  --color-primary: var(--color-brand-500);
+  --color-primary-hover: var(--color-brand-600);
+  --color-primary-text: var(--color-brand-300);
+  --color-primary-soft: rgba(201, 37, 44, 0.15);
+  --color-primary-glow: rgba(201, 37, 44, 0.12);
+  --color-primary-glow-strong: rgba(201, 37, 44, 0.22);
+  --color-on-primary: #ffffff;
+  --color-success: var(--color-green-500);
   --color-info: #60a5fa;
   --color-info-soft: rgba(96, 165, 250, 0.13);
   --color-violet: #a78bfa;
@@ -32,7 +45,7 @@
   --color-danger-soft: rgba(248, 113, 113, 0.12);
   --color-success-soft: rgba(34, 197, 94, 0.12);
   --color-scrim: rgba(3, 7, 18, 0.76);
-  --color-ring: #86efac;
+  --color-ring: var(--color-brand-500);
   --space-xs: 0.25rem;
   --space-sm: 0.5rem;
   --space-md: 1rem;
@@ -49,6 +62,19 @@
   --shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.32);
   --transition-fast: 150ms ease;
   --transition-base: 220ms ease;
+
+  /* Component color tokens */
+  --brand-mark-background: linear-gradient(
+    135deg,
+    var(--color-primary),
+    var(--color-brand-300)
+  );
+  --brand-mark-shadow: 0 8px 26px var(--color-primary-glow-strong);
+  --button-primary-background: var(--color-primary);
+  --button-primary-background-hover: var(--color-primary-hover);
+  --button-primary-foreground: var(--color-on-primary);
+  --button-primary-shadow: 0 6px 20px var(--color-primary-glow-strong);
+  --focus-ring-shadow: 0 0 0 3px var(--color-primary-soft);
 }
 
 :root[data-theme="light"] {
@@ -63,9 +89,14 @@
   --color-muted: #e9eef5;
   --color-border: rgba(71, 85, 105, 0.2);
   --color-border-strong: rgba(71, 85, 105, 0.38);
-  --color-primary: #15803d;
-  --color-primary-hover: #166534;
+  --color-primary: var(--color-brand-500);
+  --color-primary-hover: var(--color-brand-600);
+  --color-primary-text: var(--color-brand-500);
+  --color-primary-soft: rgba(201, 37, 44, 0.1);
+  --color-primary-glow: rgba(201, 37, 44, 0.08);
+  --color-primary-glow-strong: rgba(201, 37, 44, 0.16);
   --color-on-primary: #ffffff;
+  --color-success: var(--color-green-700);
   --color-info: #2563eb;
   --color-info-soft: rgba(37, 99, 235, 0.09);
   --color-violet: #7c3aed;
@@ -76,7 +107,7 @@
   --color-danger-soft: rgba(198, 40, 40, 0.08);
   --color-success-soft: rgba(22, 163, 74, 0.09);
   --color-scrim: rgba(15, 23, 42, 0.58);
-  --color-ring: #15803d;
+  --color-ring: var(--color-brand-500);
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.07);
   --shadow-md: 0 12px 32px rgba(15, 23, 42, 0.08);
   --shadow-lg: 0 24px 70px rgba(15, 23, 42, 0.18);
@@ -98,7 +129,7 @@ body {
   background:
     radial-gradient(
       circle at 85% 0%,
-      rgba(34, 197, 94, 0.1),
+      var(--color-primary-glow),
       transparent 28rem
     ),
     radial-gradient(
@@ -209,7 +240,7 @@ svg {
 }
 .eyebrow {
   margin-bottom: var(--space-sm);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-family: "Fira Code", ui-monospace, monospace;
   font-size: 0.75rem;
   font-weight: 600;
@@ -231,9 +262,9 @@ svg {
   height: 2.75rem;
   place-items: center;
   color: var(--color-on-primary);
-  background: linear-gradient(135deg, var(--color-primary), #5ee68d);
+  background: var(--brand-mark-background);
   border-radius: 0.85rem;
-  box-shadow: 0 8px 26px rgba(34, 197, 94, 0.2);
+  box-shadow: var(--brand-mark-shadow);
 }
 .brand-mark svg {
   width: 1.55rem;
@@ -307,15 +338,15 @@ textarea:disabled {
   opacity: 0.45;
 }
 .button-primary {
-  color: var(--color-on-primary);
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  box-shadow: 0 6px 20px rgba(34, 197, 94, 0.16);
+  color: var(--button-primary-foreground);
+  background: var(--button-primary-background);
+  border-color: var(--button-primary-background);
+  box-shadow: var(--button-primary-shadow);
 }
 .button-primary:hover:not(:disabled) {
-  color: var(--color-on-primary);
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
+  color: var(--button-primary-foreground);
+  background: var(--button-primary-background-hover);
+  border-color: var(--button-primary-background-hover);
 }
 .button-secondary {
   background: var(--color-muted);
@@ -371,7 +402,7 @@ textarea:disabled {
   height: 0.85rem;
 }
 .status-success {
-  color: var(--color-primary);
+  color: var(--color-success);
   background: var(--color-success-soft);
 }
 .status-info {
@@ -397,7 +428,7 @@ textarea:disabled {
   display: inline-block;
   width: 0.5rem;
   height: 0.5rem;
-  background: var(--color-primary);
+  background: var(--color-success);
   border-radius: 50%;
   box-shadow: 0 0 0 0.3rem var(--color-success-soft);
 }
@@ -431,7 +462,7 @@ textarea:disabled {
   font-weight: 600;
 }
 .success-text {
-  color: var(--color-primary);
+  color: var(--color-success);
 }
 .danger-text {
   color: var(--color-danger);
@@ -466,7 +497,7 @@ input:focus,
 textarea:focus {
   background: var(--color-card-solid);
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-success-soft);
+  box-shadow: var(--focus-ring-shadow);
   outline: none;
 }
 input::placeholder,
@@ -571,8 +602,8 @@ label {
 }
 .app-sidebar nav a:hover,
 .app-sidebar nav a.active {
-  color: var(--color-primary);
-  background: var(--color-success-soft);
+  color: var(--color-primary-text);
+  background: var(--color-primary-soft);
   border-color: color-mix(in srgb, var(--color-primary) 28%, transparent);
 }
 .sidebar-footer {
@@ -620,9 +651,9 @@ label {
   align-items: center;
   gap: var(--space-sm);
   padding: 0.65rem 0.8rem;
-  color: var(--color-muted-foreground);
+  color: var(--color-success);
   background: var(--color-success-soft);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
   border-radius: var(--radius-sm);
   font-family: "Fira Code", ui-monospace, monospace;
   font-size: 0.7rem;
@@ -650,7 +681,7 @@ label {
 .session-loading > svg {
   width: 2rem;
   height: 2rem;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .route-loading .spinner {
   width: 2rem;
@@ -707,8 +738,8 @@ label {
   height: 2.75rem;
   margin-bottom: var(--space-lg);
   place-items: center;
-  color: var(--color-primary);
-  background: var(--color-success-soft);
+  color: var(--color-primary-text);
+  background: var(--color-primary-soft);
   border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
   border-radius: var(--radius-md);
 }
@@ -821,9 +852,9 @@ label {
   box-shadow: var(--shadow-md);
 }
 .model-card.is-serving {
-  border-color: color-mix(in srgb, var(--color-primary) 58%, transparent);
+  border-color: color-mix(in srgb, var(--color-success) 58%, transparent);
   box-shadow:
-    inset 0 3px 0 var(--color-primary),
+    inset 0 3px 0 var(--color-success),
     var(--shadow-md);
 }
 .model-card-header {
@@ -911,7 +942,7 @@ label {
   justify-content: center;
   gap: 0.65rem;
   margin: 0;
-  color: var(--color-primary);
+  color: var(--color-success);
   font-size: 0.8rem;
   font-weight: 600;
 }
@@ -1022,7 +1053,7 @@ progress::-moz-progress-bar {
   border-radius: var(--radius-md);
 }
 .metric-icon-green {
-  color: var(--color-primary);
+  color: var(--color-success);
   background: var(--color-success-soft);
 }
 .metric-icon-blue {
@@ -1058,7 +1089,7 @@ progress::-moz-progress-bar {
   font-size: 0.75rem;
 }
 .metric-value {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 1.75rem;
 }
 .metric-hero-value {
@@ -1114,7 +1145,7 @@ progress::-moz-progress-bar {
   font-size: 0.82rem;
 }
 .request-breakdown span:nth-child(1) svg {
-  color: var(--color-primary);
+  color: var(--color-success);
 }
 .request-breakdown span:nth-child(2) svg {
   color: var(--color-danger);
@@ -1287,7 +1318,7 @@ progress::-moz-progress-bar {
   margin: var(--space-lg) 0;
   padding: var(--space-md);
   overflow-wrap: anywhere;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: var(--color-background-deep);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -1422,8 +1453,8 @@ details[open] > summary .details-caret {
   margin-top: 1rem;
   min-width: 2.25rem;
   padding: 0.15rem 0.4rem;
-  color: var(--color-primary);
-  background: var(--color-success-soft);
+  color: var(--color-primary-text);
+  background: var(--color-primary-soft);
   border-radius: 999px;
   font-family: "Fira Code", ui-monospace, monospace;
   font-size: 0.75rem;
@@ -1487,7 +1518,7 @@ input[type="range"] {
   display: inline-flex;
   align-items: center;
   gap: var(--space-sm);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 0.78rem;
   font-weight: 600;
 }
@@ -1511,11 +1542,11 @@ input[type="range"] {
   height: 4.25rem;
   margin-bottom: var(--space-lg);
   place-items: center;
-  color: var(--color-primary);
-  background: var(--color-success-soft);
+  color: var(--color-primary-text);
+  background: var(--color-primary-soft);
   border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
   border-radius: 1.35rem;
-  box-shadow: 0 12px 34px rgba(34, 197, 94, 0.12);
+  box-shadow: 0 12px 34px var(--color-primary-glow);
 }
 .chat-hero-icon svg {
   width: 2rem;
@@ -1583,8 +1614,8 @@ input[type="range"] {
   border-radius: var(--radius-sm);
 }
 .assistant .message-avatar {
-  color: var(--color-primary);
-  background: var(--color-success-soft);
+  color: var(--color-primary-text);
+  background: var(--color-primary-soft);
 }
 .message-avatar svg {
   width: 1.1rem;
@@ -1831,7 +1862,7 @@ input[type="range"] {
       linear-gradient(90deg, rgba(96, 165, 250, 0.04) 1px, transparent 1px),
       radial-gradient(
         circle at 25% 25%,
-        rgba(34, 197, 94, 0.18),
+        var(--color-primary-glow-strong),
         transparent 28rem
       ),
       var(--color-background-deep);
@@ -1852,7 +1883,8 @@ input[type="range"] {
     background: rgba(96, 165, 250, 0.08);
     border: 1px solid rgba(96, 165, 250, 0.12);
     border-radius: 50%;
-    box-shadow: 0 0 0 5rem rgba(34, 197, 94, 0.025);
+    box-shadow: 0 0 0 5rem
+      color-mix(in srgb, var(--color-primary) 3%, transparent);
   }
   .showcase-copy {
     position: relative;
@@ -1884,7 +1916,7 @@ input[type="range"] {
     font-size: 0.86rem;
   }
   .trust-list svg {
-    color: var(--color-primary);
+    color: var(--color-success);
   }
   .login-panel {
     padding: 7rem clamp(2rem, 5vw, 5rem) var(--space-xl);
