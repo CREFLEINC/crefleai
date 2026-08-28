@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { splitSseEvents } from "../sse";
@@ -97,7 +104,8 @@ export default function ChatPage() {
   const [token, setToken] = useState(
     localStorage.getItem("crefleai_token") ?? "",
   );
-  const [modelLookupToken, setModelLookupToken] = useState(token);
+  const latestTokenRef = useRef(token);
+  const contextRequestIdRef = useRef(0);
   // 최초 마운트 시에만 토큰 유무로 초기화 — 이후에는 사용자가 직접 접고 펼친다
   const [settingsOpen, setSettingsOpen] = useState(!token);
   const [system, setSystem] = useState(
@@ -113,17 +121,30 @@ export default function ChatPage() {
 
   const loadContextLength = useCallback(
     async (authToken: string, isCancelled: () => boolean = () => false) => {
+      if (authToken !== latestTokenRef.current) return;
+      const requestId = ++contextRequestIdRef.current;
+      const shouldIgnore = (): boolean =>
+        isCancelled() ||
+        authToken !== latestTokenRef.current ||
+        requestId !== contextRequestIdRef.current;
       try {
         const res = await fetch("/v1/models", {
           headers: { Authorization: `Bearer ${authToken}` },
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!shouldIgnore()) setContextLength(null);
+          return;
+        }
         const body = await res.json();
         const length = body?.data?.[0]?.context_length;
-        if (!isCancelled() && typeof length === "number")
-          setContextLength(length);
+        if (!shouldIgnore()) {
+          setContextLength(
+            typeof length === "number" && length > 0 ? length : null,
+          );
+        }
       } catch {
-        // 조회 실패는 사용량 표시 생략으로 처리한다 — 채팅 동작은 막지 않는다
+        // 조회 실패 시 온라인 상태를 해제하되 채팅 동작은 막지 않는다.
+        if (!shouldIgnore()) setContextLength(null);
       }
     },
     [],
@@ -131,27 +152,23 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!token) {
-      setModelLookupToken("");
       setContextLength(null);
       return;
     }
-    const timer = setTimeout(
-      () => setModelLookupToken(token),
-      MODEL_LOOKUP_DEBOUNCE_MS,
-    );
-    return () => clearTimeout(timer);
-  }, [token]);
-
-  useEffect(() => {
-    if (!modelLookupToken) return;
     let cancelled = false;
-    void loadContextLength(modelLookupToken, () => cancelled);
+    const timer = setTimeout(() => {
+      void loadContextLength(token, () => cancelled);
+    }, MODEL_LOOKUP_DEBOUNCE_MS);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [loadContextLength, modelLookupToken]);
+  }, [loadContextLength, token]);
 
   function saveToken(value: string) {
+    latestTokenRef.current = value;
+    contextRequestIdRef.current += 1;
+    setContextLength(null);
     setToken(value);
     localStorage.setItem("crefleai_token", value);
   }
@@ -175,7 +192,7 @@ export default function ChatPage() {
 
   async function send(e: FormEvent) {
     e.preventDefault();
-    if (!input.trim() || busy) return;
+    if (!token || !input.trim() || busy) return;
     setError(null);
     const history: ChatMessage[] = [
       ...messages,
@@ -240,6 +257,20 @@ export default function ChatPage() {
     }
   }
 
+  function submitOnEnter(
+    event: ReactKeyboardEvent<HTMLTextAreaElement>,
+  ): void {
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  }
+
   // 마지막 응답의 usage가 현재 대화 상태를 커버하면 실제 값, 아니면 문자 수 근사치
   const usedTokens =
     usage && usage.messageCount === messages.length
@@ -256,12 +287,14 @@ export default function ChatPage() {
       <header className="chat-topbar">
         <Brand compact />
         <div className="chat-topbar-actions">
-          <StatusBadge
-            tone={contextLength ? "success" : "neutral"}
-            pulse={Boolean(contextLength)}
-          >
-            {contextLength ? "Model online" : "연결 대기"}
-          </StatusBadge>
+          <span role="status" aria-live="polite" aria-atomic="true">
+            <StatusBadge
+              tone={contextLength ? "success" : "neutral"}
+              pulse={Boolean(contextLength)}
+            >
+              {contextLength ? "Model online" : "연결 대기"}
+            </StatusBadge>
+          </span>
           <a className="button button-ghost button-small" href="/admin">
             관리자
           </a>
@@ -454,6 +487,7 @@ export default function ChatPage() {
                 id="chat-message"
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
+                onKeyDown={submitOnEnter}
                 placeholder={
                   token ? "메시지를 입력하세요" : "먼저 API 토큰을 입력하세요"
                 }
@@ -475,7 +509,8 @@ export default function ChatPage() {
               </button>
             </form>
             <p className="composer-hint">
-              AI 응답에는 부정확한 정보가 포함될 수 있습니다.
+              Enter 전송 · Shift+Enter 줄바꿈 · AI 응답에는 부정확한 정보가
+              포함될 수 있습니다.
             </p>
           </div>
         </section>
