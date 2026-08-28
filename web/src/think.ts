@@ -6,6 +6,11 @@ export interface ThinkSplit {
   thinking: boolean;
 }
 
+export interface AssistantPromptFields {
+  content: string;
+  thinking?: string;
+}
+
 const OPEN = "<think>";
 const CLOSE = "</think>";
 
@@ -140,5 +145,17 @@ export function splitThink(content: string, streaming = false): ThinkSplit {
     think: content.slice(OPEN.length, end),
     answer: content.slice(end + CLOSE.length).replace(/^\s+/, ""),
     thinking: false,
+  };
+}
+
+/** Harmony 원문을 다음 요청의 assistant 메시지 필드로 변환한다. */
+export function toAssistantPromptFields(content: string): AssistantPromptFields {
+  const harmonyCandidate = stripHarmonyPrefix(content);
+  if (!HARMONY_CHANNEL.test(harmonyCandidate)) return { content };
+
+  const { think, answer } = splitHarmony(content, false);
+  return {
+    content: answer,
+    ...(think === null ? {} : { thinking: think }),
   };
 }
