@@ -132,6 +132,88 @@ it("토큰을 입력하는 동안 컨텍스트 크기 조회를 디바운스한�
   expect(mock.mock.calls[0][0]).toBe("/v1/models");
 });
 
+it("토큰이 변경되면 이전 모델 온라인 상태를 즉시 무효화한다", async () => {
+  localStorage.setItem("crefleai_token", "valid-token");
+  let modelCalls = 0;
+  const mock = vi.fn(async (url: RequestInfo | URL) => {
+    if (!String(url).includes("/v1/models"))
+      throw new Error("예상하지 않은 채팅 요청입니다");
+    modelCalls += 1;
+    return modelCalls === 2
+      ? new Response("{}", { status: 401 })
+      : modelsResponse(modelCalls === 1 ? 100 : 200);
+  });
+  vi.stubGlobal("fetch", mock);
+
+  render(<ChatPage />);
+  expect(await screen.findByText("Model online")).toBeInTheDocument();
+  expect(screen.getByText(/컨텍스트 사용량/)).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText("API 토큰"), {
+    target: { value: "invalid-token" },
+  });
+
+  expect(screen.getByText("연결 대기")).toBeInTheDocument();
+  expect(screen.queryByText(/컨텍스트 사용량/)).toBeNull();
+  await waitFor(() => expect(modelCalls).toBe(2));
+  expect(screen.getByText("연결 대기")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText("API 토큰"), {
+    target: { value: "valid-token" },
+  });
+
+  await waitFor(() => expect(modelCalls).toBe(3));
+  expect(await screen.findByText("Model online")).toBeInTheDocument();
+  expect(screen.getByText(/컨텍스트 사용량 약 0 \/ 200/)).toBeInTheDocument();
+});
+
+it("Enter로 메시지를 전송하고 Shift+Enter는 줄바꿈을 유지한다", async () => {
+  localStorage.setItem("crefleai_token", "t");
+  const mock = stubFetch(sseResponse(delta("답변")));
+  const user = userEvent.setup();
+  render(<ChatPage />);
+  const composer = screen.getByLabelText("메시지");
+
+  await user.type(composer, "첫 메시지");
+  fireEvent.keyDown(composer, { key: "Enter", code: "Enter" });
+
+  expect(await screen.findByText("답변")).toBeInTheDocument();
+  expect(
+    mock.mock.calls.filter(([url]) =>
+      String(url).includes("/v1/chat/completions"),
+    ),
+  ).toHaveLength(1);
+
+  await user.type(composer, "둘째{shift>}{enter}{/shift}줄");
+  expect(composer).toHaveValue("둘째\n줄");
+  expect(
+    mock.mock.calls.filter(([url]) =>
+      String(url).includes("/v1/chat/completions"),
+    ),
+  ).toHaveLength(1);
+});
+
+it("IME 조합 중 Enter는 메시지를 전송하지 않는다", () => {
+  localStorage.setItem("crefleai_token", "t");
+  const mock = stubFetch(sseResponse(delta("답변")));
+  render(<ChatPage />);
+  const composer = screen.getByLabelText("메시지");
+  fireEvent.change(composer, { target: { value: "조합 중" } });
+
+  fireEvent.keyDown(composer, {
+    key: "Enter",
+    code: "Enter",
+    isComposing: true,
+  });
+
+  expect(composer).toHaveValue("조합 중");
+  expect(
+    mock.mock.calls.filter(([url]) =>
+      String(url).includes("/v1/chat/completions"),
+    ),
+  ).toHaveLength(0);
+});
+
 it("대화가 쌓이면 문자 수 근사치로 사용량이 늘어난다", async () => {
   localStorage.setItem("crefleai_token", "t");
   stubFetch(sseResponse(delta("답")), 100);
