@@ -15,6 +15,12 @@ CrefleAI — 사내 GPU 서버에서 오픈 소스 LLM(GGUF)을 OpenAI 호환 AP
 2. **모든 변경 사항은 반드시 PR로 올린다.** 디폴트 브랜치(main)에 직접 푸시하지 않는다. 머지는 Squash를 기본으로 한다.
 3. **개발 규칙은 `crefle-agent-skills:coding-rules` 스킬을 따른다.** 코드 작성·수정·리뷰 전에 해당 언어 규칙을 확인한다. 커밋은 Conventional Commits(한국어 제목 허용), 브랜치는 `<type>/<간단한-설명>`.
 
+## Spec Kit (명세 주도 개발)
+
+- 원칙: `.specify/memory/constitution.md` — 명세·계획·구현 전에 확인한다.
+- 이슈 해결은 워크트리(`.claude/worktrees/`)와 `<type>/<간단한-설명>` 브랜치를 먼저 만든 뒤, 그 안에서 `/speckit-specify` → `/speckit-plan` → `/speckit-tasks` → `/speckit-implement` 순으로 진행한다. 명세는 `specs/NNN-이름/`에 한국어로 작성한다.
+- spec-kit git 확장(`specify extension add git`)은 쓰지 않는다 — `001-xxx` 자동 브랜치가 브랜치 규칙과 충돌한다.
+
 ## 자주 쓰는 명령
 
 ```bash
