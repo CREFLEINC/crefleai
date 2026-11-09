@@ -469,6 +469,7 @@ td small { color: var(--muted); }
         <tr><td class="goal">워커 위치</td><td>게이트웨이 컨테이너 안</td><td>같은 PC의 GPU별 · 다른 GPU 서버 · 호환 모드 로컬</td></tr>
         <tr><td class="goal">워커 연결</td><td>고정 주소 <code>127.0.0.1:8001</code></td><td>워커가 등록 토큰으로 스스로 등록, 게이트웨이가 워커 주소로 요청</td></tr>
         <tr><td class="goal">모델 선택</td><td>관리자가 교체 (서비스 중단)</td><td>사용자가 <code>model</code> 값으로 선택, 교체 없음</td></tr>
+        <tr><td class="goal">같은 모델 동시 요청</td><td>워커 1개가 하나씩 처리, 나머지는 그 워커만 기다림</td><td>빈 워커로 바로 분산, 모두 바쁘면 요청 순서대로 먼저 끝난 워커가 받음</td></tr>
         <tr><td class="goal">장애 영향</td><td>워커가 죽으면 전체 추론 중단</td><td>해당 모델만 영향, 다른 모델은 계속 서비스</td></tr>
         <tr><td class="goal">사양 확인</td><td>없음 (로드 실패로 알게 됨)</td><td>실행 전에 GPU 메모리 판정, 최소 미달 시 차단</td></tr>
         <tr><td class="goal">외부 API</td><td colspan="2">변경 없음 — 같은 주소·토큰·요청·오류 형식 (인스턴스 지정은 관리자 점검용만)</td></tr>
@@ -490,7 +491,7 @@ td small { color: var(--muted); }
   <div class="wrap">
     <p class="eyebrow">05 · 목표 및 검증 지표</p>
     <h2>무엇이 되면 성공인가</h2>
-    <p class="lede">명세의 성공 기준(SC-001~010)을 다섯 가지 목표로 묶었습니다. 모두 실제 GPU 환경에서 시험해 확인합니다.</p>
+    <p class="lede">명세의 성공 기준(SC-001~012)을 여섯 가지 목표로 묶었습니다. 모두 실제 GPU 환경에서 시험해 확인합니다.</p>
     <div class="kpis">
       <div class="kpi"><span class="big">2+</span><span class="lbl">동시에 서비스하는 모델 수</span></div>
       <div class="kpi"><span class="big">≤ 20%</span><span class="lbl">동시 호출 시 첫 응답 지연 증가</span></div>
@@ -504,6 +505,8 @@ td small { color: var(--muted); }
       <tbody>
         <tr><td class="goal">동시 서비스</td><td>모델 두 개를 동시에 불러도 서로 거의 안 기다린다<br><small>SC-001 · SC-002</small></td>
           <td class="target">지연 증가 ≤ 20%</td><td>모델별 단독 호출과 동시 호출의 첫 응답 시간 비교. GPU별 워커 2개 + 다른 서버 워커 1개 구성</td></tr>
+        <tr><td class="goal">공정한 분배</td><td>빈 주방이 있으면 바로 거기로, 다 바쁘면 먼저 온 손님부터 먼저 비는 주방으로<br><small>SC-011 · SC-012</small></td>
+          <td class="target">빈 워커 두고 대기 0건<br>순서 일치 100%</td><td>같은 모델 워커 2개에 사용자 5명 동시 요청을 반복하며, 대기 발생 시점과 워커 전달 순서를 기록해 요청 순서와 비교</td></tr>
         <tr><td class="goal">장애 격리</td><td>한 주방에 불이 나도 다른 주방은 계속 요리한다<br><small>SC-003 · SC-004</small></td>
           <td class="target">성공률 ≥ 99%<br>30초 내 제외·복귀</td><td>워커 하나를 강제 종료·재시작하며 다른 모델에 요청을 계속 보내 성공률과 상태 변화 시간 측정</td></tr>
         <tr><td class="goal">기존 사용자 무변경</td><td>쓰던 프로그램을 고치지 않아도 된다<br><small>SC-005 · SC-007</small></td>
